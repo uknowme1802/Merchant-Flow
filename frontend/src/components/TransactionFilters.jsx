@@ -1,11 +1,11 @@
-export default function TransactionFilters({search, setsearch, status, setStatus, sort, setSort}){
+export default function TransactionFilters({search, setSearch, status, setStatus, sort, setSort}){
     return(
         <div className="flex justify-between mb-4">
             <input
             className="border rounded-lg p-2 w-64"
             placeholder="Search Transaction"
             value={search}
-            onChange={(e)=>setsearch(e.target.value)}
+            onChange={(e)=>setSearch(e.target.value)}
             />
             <select className="border rounded-lg p-2"
                 value={status}
