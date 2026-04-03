@@ -11,7 +11,7 @@ connectDB();
 app.use(cors());
 app.use(express.json());
 app.use(cors({
-    origin: "https://merchant-flow-one.vercel.app/"
+    origin: "https://merchant-flow-one.vercel.app"
 }));
 
 //Routes
