@@ -5,7 +5,7 @@ import Papa from "papaparse"
 
 import TransactionTable from "../components/TransactionTable";
 import TransactionFilters from "../components/TransactionFilters";
-import Pagination from "../components/ui/pagination";
+import Pagination from "../components/ui/Pagination";
 
 import toast from "react-hot-toast";
 
@@ -58,7 +58,7 @@ export default function Transactions(){
   }
 
   if(!transactions.length){
-    <p>No transactions Found</p>
+    return <p>No transactions Found</p>
   }
 
   let filtered=transactions.filter(tx=>tx.id.toLowerCase().includes(search.toLowerCase()));
@@ -131,7 +131,7 @@ export default function Transactions(){
       
       <TransactionFilters 
       search={search} 
-      setsearch={setSearch}
+      setSearch={setSearch}
       status={status}
       setStatus={setStatus}
       sort={sort}
