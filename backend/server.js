@@ -4,15 +4,16 @@ const cors = require("cors");
 const connectDB = require("./config/db");
 const PORT = process.env.PORT;
 
+const rateLimiter = require("./middleware/rateLimiter");
+const errorMiddleware = require("./middleware/errorMiddleware");
 
 const app =express();
 connectDB();
-
-app.use(cors());
 app.use(express.json());
 app.use(cors({
     origin: "https://merchant-flow-one.vercel.app"
 }));
+app.use(rateLimiter);
 
 //Routes
 const authRoutes= require("./routes/authRoutes");
@@ -28,5 +29,7 @@ app.use("/api/users", userRoutes);
 app.get("/", (req,res)=>{
     res.send("API Running...👌");
 });
+
+app.use(errorMiddleware)
 
 app.listen(PORT, ()=>{console.log(`Server running at PORT: ${PORT}`)});
