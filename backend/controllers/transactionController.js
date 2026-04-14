@@ -1,5 +1,6 @@
 const Transaction = require("../models/Transaction")
 const redis = require("../config/redis");
+const { getIO } = require("../socket");
 
 exports.getTransactions= async (req,res,next)=>{
     try{
@@ -42,6 +43,10 @@ exports.addTransaction= async (req,res, next)=>{
         if(keys.length>0){
             await redis.del(keys);
         }
+
+        const io = getIO();
+        io.emit("newTransaction", newTxn);
+
         res.status(201).json({
             success: true,
             data: newTxn
