@@ -7,11 +7,15 @@ const PORT = process.env.PORT;
 const rateLimiter = require("./middleware/rateLimiter");
 const errorMiddleware = require("./middleware/errorMiddleware");
 
+const http = require("http");
+const initSocket = require("./socket");
+
 const app =express();
 connectDB();
 app.use(express.json());
 app.use(cors({
     origin: "https://merchant-flow-one.vercel.app"
+    
 }));
 app.use(rateLimiter);
 
@@ -32,4 +36,7 @@ app.get("/", (req,res)=>{
 
 app.use(errorMiddleware)
 
-app.listen(PORT, ()=>{console.log(`Server running at PORT: ${PORT}`)});
+const server = http.createServer(app);
+initSocket(server);
+
+server.listen(PORT, ()=>{console.log(`Server running at PORT: ${PORT}`)});
