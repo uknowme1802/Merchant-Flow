@@ -8,7 +8,7 @@ const rateLimiter = require("./middleware/rateLimiter");
 const errorMiddleware = require("./middleware/errorMiddleware");
 
 const http = require("http");
-const initSocket = require("./socket");
+const {initSocket} = require("./socket");
 
 const app =express();
 connectDB();
