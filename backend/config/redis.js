@@ -1,10 +1,23 @@
-const Redis =  require("ioredis");
+const Redis = require("ioredis");
 
-const redis = new Redis(process.env.REDIS_URL, {
-    tls:{},
-});
+let redis = null;
 
-redis.on("connect", ()=> console.log("✅ Redis connected"));
-redis.on("error", ()=> console.error("❌ Redis Error"));
+try {
+  if (process.env.REDIS_URL) {
+    redis = new Redis(process.env.REDIS_URL, {
+      tls: process.env.REDIS_URL.startsWith("rediss://") ? {} : undefined,
+    });
 
-module.exports = Redis;
+    redis.on("connect", () => {
+      console.log("✅ Redis connected");
+    });
+
+    redis.on("error", (err) => {
+      console.error("❌ Redis error:", err.message);
+    });
+  }
+} catch (err) {
+  console.error("❌ Redis init failed:", err.message);
+}
+
+module.exports = redis;

@@ -28,12 +28,12 @@ export default function Login(){
       password
     });
 
+
     const userData = {
       email: res.data.user.email,
       role: res.data.user.role
     };
-
-    login(userData, res.data.token)
+    login(userData, res.data.accessToken)
     toast.success("Login Successful!")
 
     navigate("/dashboard");
