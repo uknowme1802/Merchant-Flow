@@ -7,14 +7,11 @@ exports.getTransactions= async (req,res,next)=>{
         const { page=1, limit =10, status } = req.query;
         // const data = await Transaction.find().sort({createdAt: -1 });
         const cacheKey = `transactions:${page}:${limit}:${status || "all"}`
-        
-
-        if(redis){
-            const cachedData = await redis.get(cacheKey);
+        const cachedData = await redis.get(cacheKey);        
+            
             if(cachedData){
             return res.json(JSON.parse(cachedData))
-        }
-        }
+            }
 
         const query={};
         if(status) query.status=status;
