@@ -7,11 +7,15 @@ exports.getTransactions= async (req,res,next)=>{
         const { page=1, limit =10, status } = req.query;
         // const data = await Transaction.find().sort({createdAt: -1 });
         const cacheKey = `transactions:${page}:${limit}:${status || "all"}`
-        const cachedData = await redis.get(cacheKey);
+        
 
-        if(cachedData){
+        if(redis){
+            const cachedData = await redis.get(cacheKey);
+            if(cachedData){
             return res.json(JSON.parse(cachedData))
         }
+        }
+
         const query={};
         if(status) query.status=status;
         const transactions = await Transaction.find(query)
@@ -27,7 +31,10 @@ exports.getTransactions= async (req,res,next)=>{
             total,
             data: transactions
         };
-        await redis.set(cacheKey, JSON.stringify(response), "EX", 60)
+        
+        if(redis){
+            await redis.set(cacheKey, JSON.stringify(response), "EX", 60)
+        }
 
         res.json(response);
     } catch(err){
