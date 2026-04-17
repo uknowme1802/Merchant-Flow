@@ -34,7 +34,7 @@ export default function Transactions(){
     try{
       setLoading(true);
       const res = await API.get("/transactions");
-      setTransactions(res.data);
+      setTransactions(res.data.data);
       setLastUpdated(new Date().toLocaleTimeString());
     }catch(err){
       console.error(err)
@@ -57,7 +57,7 @@ export default function Transactions(){
     )
   }
 
-  if(!transactions.length){
+  if(!transactions || transactions.length){
     return <p>No transactions Found</p>
   }
 
