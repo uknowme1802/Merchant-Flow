@@ -106,8 +106,12 @@ export default function Transactions(){
       toast.success("Tranaction added!")
       fetchTransactions();
     } catch(err){
-      toast.error(err)
-      alert("Only admin can add transactions");
+      console.error(err);
+      if(err.response?.status === 403){
+        toast.error("Only admin can add transactions");
+      } else {
+        toast.error(err.response?.data?.message || "Failed to add transaction");
+      }
     }
   }; 
 

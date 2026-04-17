@@ -43,7 +43,7 @@ exports.addTransaction= async (req,res, next)=>{
     try{
         const newTxn = new Transaction(req.body);
         await newTxn.save();
-        const keys = await redis.key("transactions:*");
+        const keys = await redis.keys("transactions:*");
         if(keys.length>0){
             await redis.del(keys);
         }
