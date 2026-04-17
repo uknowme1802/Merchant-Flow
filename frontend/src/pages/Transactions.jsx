@@ -57,7 +57,7 @@ export default function Transactions(){
     )
   }
 
-  if(!transactions || transactions.length){
+  if(!transactions || !transactions.length){
     return <p>No transactions Found</p>
   }
 

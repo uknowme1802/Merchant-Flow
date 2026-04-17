@@ -14,7 +14,10 @@ const app =express();
 connectDB();
 app.use(express.json());
 app.use(cors({
-    origin: "https://merchant-flow-one.vercel.app"
+    origin: [
+            "https://merchant-flow-one.vercel.app",
+            "http://localhost:5173"
+        ]
     
 }));
 app.use(rateLimiter);
