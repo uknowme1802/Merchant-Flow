@@ -33,11 +33,15 @@ export default function Transactions(){
   const fetchTransactions = async () =>{
     try{
       setLoading(true);
+      console.log("Fetching transactions...");
       const res = await API.get("/transactions");
+      console.log("Full API response:", res);
+      console.log("Response data:", res.data);
+      console.log("Transactions array:", res.data.data);
       setTransactions(res.data.data);
       setLastUpdated(new Date().toLocaleTimeString());
     }catch(err){
-      console.error(err)
+      console.error("Error fetching transactions:", err)
       toast.error("Failed to load Transactions")
     } finally{
       setLoading(false);
@@ -119,15 +123,20 @@ export default function Transactions(){
     <div>
       <h1 className="text-2xl font-bold mb-6">Transactions</h1>
 
-      {user?.role==="admin" &&(
-        <button onClick={addTransaction}
-        className="mb-4 bg-green-600 text-white px-4 py-2 rounded">
-          +Add Transaction
+      <div className="flex gap-2 mb-4">
+        {user?.role==="admin" &&(
+          <button onClick={addTransaction}
+          className="bg-green-600 text-white px-4 py-2 rounded">
+            +Add Transaction
+          </button>
+        )}
+        <button onClick={exportCSV} className="bg-blue-600 text-white px-4 py-2 rounded">
+          Export CSV
         </button>
-      )}
-      <button onClick={exportCSV} className="bg-blue-600 text-white px-4 py-2 rounded">
-        Export CSV
-      </button>
+        <button onClick={fetchTransactions} className="bg-purple-600 text-white px-4 py-2 rounded">
+          🔄 Refresh
+        </button>
+      </div>
 
       <p className="text-sm text-gray-500 mb-4">
         Last updated: {lastUpdated}
