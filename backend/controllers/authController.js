@@ -1,6 +1,10 @@
 require("dotenv").config();
-const { v4: uuidv4 } = require("uuid");
+
+//const { v4: uuidv4 } = require("uuid");
+const crypto = require("crypto");
+const User = require("../models/User");
 const jwt = require("jsonwebtoken");
+
 
 const SECRET = process.env.SECRET;
 const REFRESH_SECRET = process.env.REFRESH_SECRET;
@@ -21,14 +25,14 @@ exports.login = (req, res) => {
     });
   }
 
-  // 🔐 Access Token (short-lived)
+  //Access Token code
   const accessToken = jwt.sign(user, SECRET, {
     expiresIn: "15m"
   });
 
-  // 🔁 Refresh Token (long-lived)
+  // Refresh Token 
   const refreshToken = jwt.sign(
-    { ...user, tokenId: uuidv4() },
+    { ...user, tokenId: crypto.randomUUID() },
     REFRESH_SECRET,
     { expiresIn: "7d" }
   );
@@ -42,7 +46,7 @@ exports.login = (req, res) => {
 };
 
 
-// 🔁 REFRESH TOKEN API
+// REFRESH TOKEN API
 exports.refreshToken = (req, res) => {
   const { token } = req.body;
 

@@ -27,11 +27,13 @@ const authRoutes= require("./routes/authRoutes");
 const dashboardRoutes = require("./routes/dashboardRoutes");
 const transactionRoutes = require("./routes/transactionRoutes");
 const userRoutes = require("./routes/userRoutes");
+const healthRoutes = require("./routes/healthRoutes");
 
 app.use("/api/auth", authRoutes);
 app.use("/api/dashboard", dashboardRoutes);
 app.use("/api/transactions", transactionRoutes);
 app.use("/api/users", userRoutes);
+app.use("/health", healthRoutes);
 
 app.get("/", (req,res)=>{
     res.send("API Running...👌");
@@ -43,3 +45,21 @@ const server = http.createServer(app);
 initSocket(server);
 
 server.listen(PORT, ()=>{console.log(`Server running at PORT: ${PORT}`)});
+
+const gracefulShutdown = (signal) => {
+    console.log(`${signal} recevied! Shuting down the server`);
+
+    server.close(()=>{
+        console.log("HTTP server closed.");
+
+        process.exit(0);
+    })
+};
+
+process.on("SIGTERM", ()=>{
+    gracefulShutdown("SIGTERM");
+});
+
+process.on("SIGINT",()=>{
+    gracefulShutdown("SIGINT");
+});

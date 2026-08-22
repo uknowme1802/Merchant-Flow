@@ -1,8 +1,13 @@
 const mongoose = require("mongoose");
 
 const connectDB = async () =>{
+    
+        const mongoURI = process.env.MONGO_URI
+        if(!mongoURI){
+            console.error("MongoDBURI is not found. Refused to connect MongoDB");
+            process.exit(1);
+        }
     try{
-        const mongoURI = process.env.MONGO_URI || "mongodb+srv://harshdeepsharma654_db_user:qRnksk7YDqipN9PS@merchant-flow.ebtmgyb.mongodb.net/"
         await mongoose.connect(mongoURI);
         console.log("MongoDB connected");
     } catch(err){
