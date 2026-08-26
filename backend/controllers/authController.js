@@ -10,11 +10,10 @@ const jwt = require("jsonwebtoken");
 const SECRET = process.env.SECRET;
 const REFRESH_SECRET = process.env.REFRESH_SECRET;
 
-const signAccessToken = (user) => {
+const signAccessToken = (user) =>
   jwt.sign({id: user._id, email:user.email, role:user.role}, SECRET, {
     expiresIn: "15m"
   })
-}
 
 const signRefreshToken = (user) =>{
   jwt.sign({id:user._id}, REFRESH_SECRET, { expiresIn:"7d" })
@@ -83,8 +82,10 @@ exports.refreshToken = async (req, res, next) => {
       });
     }
 
+    let decoded;
+
     try {
-      const decoded = jwt.verify(token, REFRESH_SECRET);
+      decoded = jwt.verify(token, REFRESH_SECRET);
     } catch (err){
       return res.status(403).json({
         success:false,
@@ -115,7 +116,7 @@ exports.refreshToken = async (req, res, next) => {
 
 //Logout Module
 exports.logout = async (req, res, next) => {
- try{
+ try {
   const {token} = req.body;
   if(!token) {
     return res.status(400).json({
@@ -129,6 +130,7 @@ exports.logout = async (req, res, next) => {
   } catch(err){
     return res.json({success: true})
   }
+
   await User.findByIdAndUpdate(decoded.id, {refreshToken: null });
   return res.json({success: true});
  } catch (err) {
