@@ -15,9 +15,9 @@ const signAccessToken = (user) =>
     expiresIn: "15m"
   })
 
-const signRefreshToken = (user) =>{
+const signRefreshToken = (user) =>
   jwt.sign({id:user._id}, REFRESH_SECRET, { expiresIn:"7d" })
-}
+
 
 exports.login = async (req, res, next) => {
   
