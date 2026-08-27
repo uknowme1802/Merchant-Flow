@@ -4,7 +4,7 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "cross-env NODE_ENV=test jest --runInBand --setupFiles=./tests/setup.js",
     "start": "node server.js"
   },
   "keywords": [],
@@ -30,6 +30,9 @@
     "winston": "^3.19.0"
   },
   "devDependencies": {
-    "nodemon": "^3.1.14"
+    "cross-env": "^10.1.0",
+    "jest": "^30.4.2",
+    "nodemon": "^3.1.14",
+    "supertest": "^7.2.2"
   }
 }
