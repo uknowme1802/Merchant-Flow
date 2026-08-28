@@ -8,14 +8,29 @@ export default function Users(){
     const [role, setRole] = useState("user");
     const [password, setPassword] = useState("");
 
-    useEffect(()=>{
-        fetchUsers();
-    },[]);
-    
     const fetchUsers = async ()=>{
         const res = await API.get("/users");
         setUsers(res.data);
     };
+
+    useEffect(()=>{
+        let ignore = false;
+        
+        const load = async () =>{
+            const res = await API.get("/users");
+
+            if(!ignore){
+                setUsers(res.data)
+            }
+        }
+        
+        load();
+        return () =>{
+            ignore=true;
+        };
+    },[]);
+    
+    
     const createUser = async () =>{
         if(!email || !password){
             toast.error("Email and password required");
