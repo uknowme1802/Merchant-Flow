@@ -1,6 +1,6 @@
 # 🚀 MerchantFlow Dashboard
 
-A **production-grade full-stack payment analytics platform** with JWT authentication, role-based access control, real-time transaction updates, Redis caching, automated testing, Docker containerization, and CI/CD.
+A **full-stack payment analytics platform** with JWT authentication, role-based access control, real-time transaction updates, Redis caching, automated testing, Docker containerization, and CI/CD.
 
 ---
 
@@ -16,15 +16,12 @@ A **production-grade full-stack payment analytics platform** with JWT authentica
 
 ## 🔐 Authentication & Authorization
 
-- JWT-based authentication
-- Short-lived access tokens
-- Refresh token support
-- Refresh token validation and revocation
-- Secure logout
+- JWT-based authentication with short-lived access tokens
+- Refresh tokens, stored server-side and checked on every refresh
+- Refresh token revocation on logout
 - Password hashing with bcrypt
 - Role-based access control (**Admin / User**)
-- Protected API routes
-- Frontend route guards
+- Protected API routes + frontend route guards
 - Persistent authentication state
 
 ---
@@ -33,25 +30,19 @@ A **production-grade full-stack payment analytics platform** with JWT authentica
 
 - Revenue overview
 - Transaction statistics
-- Dynamic revenue charts
-- Transaction charts
+- Dynamic revenue and transaction charts
 - Real-time transaction updates
-- Responsive dashboard UI
-- Tailwind CSS-based interface
+- Responsive, Tailwind CSS-based UI
 
 ---
 
 ## 💳 Transactions Module
 
-- View transactions
-- Search transactions
-- Filter transactions
-- Sort transactions
+- View, search, filter, and sort transactions
 - Server-side pagination
 - CSV export using PapaParse
 - Admin-only transaction creation
-- Redis caching for faster reads
-- Cache-first data retrieval strategy
+- Redis caching for faster reads (cache-aside strategy)
 
 ---
 
@@ -59,12 +50,10 @@ A **production-grade full-stack payment analytics platform** with JWT authentica
 
 Admin users can:
 
-- Create users
-- Assign user roles
-- View users
-- Manage user access
+- Create users and assign roles
+- View all users
 
-All role restrictions are enforced on the backend.
+All role restrictions are enforced on the backend — not just hidden in the UI.
 
 ---
 
@@ -72,42 +61,34 @@ All role restrictions are enforced on the backend.
 
 - Socket.IO integration
 - WebSocket-based transaction updates
-- Live updates without page refresh
-- Event-driven architecture
+- Live updates without a page refresh
 
 ---
 
 ## ⚡ Performance & Optimization
 
-- Redis caching using Upstash
-- Cache-aside strategy
-- Reduced MongoDB queries
+- Redis caching (cache-aside strategy) with graceful fallback if Redis is unreachable
+- Reduced MongoDB queries via caching
 - Server-side pagination
-- API response optimization
-- Rate limiting
-- Render cold-start awareness
+- Rate limiting on all routes, plus a stricter limiter on auth endpoints
 
 ---
 
 ## 🛡️ Security
 
-- JWT authentication
-- Access token expiration
-- Refresh token validation
-- Refresh token revocation
+- JWT authentication with access + refresh tokens
+- Refresh token validation and revocation
 - bcrypt password hashing
-- Authentication middleware
-- Role-based authorization middleware
-- Rate limiting
+- Auth + role-based authorization middleware
+- Global rate limiting, with a tighter limiter on `/api/auth/login` and `/api/auth/refresh`
 - CORS configuration
-- Environment variables for secrets
-- MongoDB Atlas security configuration
+- Secrets kept in environment variables, never committed
 
 ---
 
 # 🩺 Health & Readiness
 
-The backend provides health monitoring endpoints for deployment and container orchestration.
+The backend exposes health monitoring endpoints for deployment and container orchestration.
 
 ### Health
 
@@ -121,18 +102,7 @@ GET /health
 GET /health/ready
 ```
 
-The readiness endpoint verifies that the application is ready to serve requests and can be used by Docker health checks and deployment platforms.
-
----
-
-# 📊 Logging & Monitoring
-
-- Winston logger integration
-- Structured logging
-- Info and error logs
-- File-based logging
-- Application error middleware
-- Docker health checks
+`/health/ready` checks live MongoDB and Redis connection status and returns `503` if either is down — this is what the Docker health check polls.
 
 ---
 
@@ -142,21 +112,11 @@ MerchantFlow uses **Jest + Supertest** for backend API testing.
 
 ### Current Test Coverage
 
-#### Authentication
+- **Auth** — admin login, user login, invalid credentials
+- **Health** — health endpoint
+- **Readiness** — readiness endpoint
 
-- Admin login
-- User login
-- Invalid credentials
-
-#### Health
-
-- Health endpoint
-
-#### Readiness
-
-- Readiness endpoint
-
-Run the complete test suite:
+Run the suite:
 
 ```bash
 cd backend
@@ -172,87 +132,50 @@ Tests:       5 passed, 5 total
 
 ### Testing Stack
 
-- Jest
-- Supertest
-- cross-env
-- Mocked MongoDB User model
+- Jest, Supertest, cross-env
+- Mocked MongoDB `User` model — no live DB required
 - Redis disabled during test environment
 
-The Express application is separated from the production HTTP server using:
+The Express app is separated from the production HTTP server:
 
 ```javascript
 module.exports = app;
 ```
 
-This allows Supertest to test the application without starting the production server.
+This lets Supertest exercise the app directly without booting the real server.
+
+> **Not yet covered:** `transactionController`, `userController`, and middleware (`adminMiddleware`, `roleMiddleware`) have no tests yet — only auth/health/readiness are currently tested.
 
 ---
 
 # 🐳 Docker
 
-The backend is containerized using Docker.
+The backend is containerized. The included `docker-compose.yml` builds and runs the **backend only** — bring your own MongoDB/Redis (e.g. Atlas + Upstash, or local containers) and point `.env` at them.
 
-## Build Docker Image
+## Build & Run Manually
 
 ```bash
 cd backend
-
 docker build -t merchantflow-backend .
+docker run -p 5000:5000 --env-file .env merchantflow-backend
 ```
 
-## Run Docker Container
+## Docker Compose
 
 ```bash
-docker run -p 5000:5000 merchantflow-backend
-```
-
----
-
-# 🐳 Docker Compose
-
-MerchantFlow also includes Docker Compose configuration.
-
-Start the backend:
-
-```bash
+cd backend
 docker compose up -d
-```
-
-Check running containers:
-
-```bash
 docker ps
-```
-
-Check backend health:
-
-```bash
 docker inspect --format='{{.State.Health.Status}}' merchantflow-backend
 ```
 
-Expected:
-
-```text
-healthy
-```
-
-Stop the container:
+Expected: `healthy`
 
 ```bash
 docker compose down
 ```
 
----
-
 ## ❤️ Docker Health Check
-
-The backend container includes a health check that verifies:
-
-```http
-GET /health/ready
-```
-
-Docker periodically checks the application readiness status.
 
 ```text
 merchantflow-backend
@@ -260,8 +183,7 @@ merchantflow-backend
         ▼
 /health/ready
         │
-        ├── Ready → healthy
-        │
+        ├── Ready     → healthy
         └── Not Ready → unhealthy
 ```
 
@@ -269,9 +191,13 @@ merchantflow-backend
 
 # 🔄 CI/CD
 
-GitHub Actions is configured to automatically validate the backend.
+GitHub Actions runs two separate pipelines on every push/PR to `Main`:
 
-The CI pipeline runs backend tests on pushes and pull requests.
+```text
+.github/workflows/
+├── backend-ci.yml   → install, test, Docker build
+└── frontend-ci.yml  → install, lint, build
+```
 
 ## CI Flow
 
@@ -281,22 +207,12 @@ Git Push
    ▼
 GitHub Actions
    │
-   ▼
-Install Dependencies
+   ├── backend-ci  → npm ci → npm test → docker build
    │
-   ▼
-Run Jest Tests
+   └── frontend-ci → npm ci → npm run lint → npm run build
    │
    ├── PASS → Pipeline succeeds
-   │
    └── FAIL → Pipeline fails
-```
-
-Backend CI configuration:
-
-```text
-.github/
-└── backend-ci.yml
 ```
 
 ---
@@ -305,65 +221,40 @@ Backend CI configuration:
 
 ## Frontend
 
-- React
-- Vite
-- Tailwind CSS
-- Axios
-- Context API
-- React Router
-- Socket.IO Client
-- PapaParse
+React · Vite · Tailwind CSS · Redux Toolkit · React Router · Axios · Socket.IO Client · Recharts · PapaParse · react-hot-toast
 
 ## Backend
 
-- Node.js
-- Express.js
-- MongoDB
-- MongoDB Atlas
-- Redis
-- Upstash Redis
-- JWT
-- bcrypt
-- Socket.IO
-- Winston
+Node.js · Express 5 · MongoDB (Mongoose) · Redis (ioredis) · JWT · bcrypt · Socket.IO · express-rate-limit
 
 ## Testing
 
-- Jest
-- Supertest
-- cross-env
+Jest · Supertest · cross-env
 
 ## DevOps
 
-- Docker
-- Docker Compose
-- GitHub Actions
+Docker · Docker Compose · GitHub Actions
 
 ## Deployment
 
-- Vercel — Frontend
-- Render — Backend
-- MongoDB Atlas — Database
-- Upstash — Redis
+Vercel (Frontend) · Render (Backend) · MongoDB Atlas · Redis (e.g. Upstash)
 
 ---
 
 # 🏗️ Architecture
 
-MerchantFlow follows a modular backend architecture.
-
 ```text
                          ┌─────────────────────┐
                          │      React UI       │
-                         │   Vite + Tailwind   │
+                         │   Vite + Tailwind    │
                          └──────────┬──────────┘
                                     │
                          REST API / WebSocket
                                     │
                                     ▼
                          ┌─────────────────────┐
-                         │    Express App      │
-                         │       app.js        │
+                         │    Express App       │
+                         │       app.js         │
                          └──────────┬──────────┘
                                     │
               ┌─────────────────────┼─────────────────────┐
@@ -376,17 +267,16 @@ MerchantFlow follows a modular backend architecture.
        │      │      │              │
        ▼      ▼      ▼              ▼
      Auth    Role   Rate       Business Logic
-   Middleware Limit  Limit           │
+   Middleware Check Limit           │
                                     ▼
                            ┌─────────────────┐
-                           │   Data Layer    │
+                           │   Data Layer     │
                            └───────┬─────────┘
                                    │
                     ┌──────────────┴──────────────┐
                     │                             │
                     ▼                             ▼
-              MongoDB Atlas                  Redis
-                                              Upstash
+              MongoDB Atlas                    Redis
 ```
 
 ---
@@ -397,7 +287,9 @@ MerchantFlow follows a modular backend architecture.
 Merchant-Flow/
 │
 ├── .github/
-│   └── backend-ci.yml
+│   └── workflows/
+│       ├── backend-ci.yml
+│       └── frontend-ci.yml
 │
 ├── backend/
 │   ├── config/
@@ -412,9 +304,11 @@ Merchant-Flow/
 │   │
 │   ├── middleware/
 │   │   ├── authMiddleware.js
-│   │   ├── errorMiddleware.js
+│   │   ├── adminMiddleware.js
+│   │   ├── roleMiddleware.js
 │   │   ├── rateLimiter.js
-│   │   └── roleMiddleware.js
+│   │   ├── authRateLimiter.js
+│   │   └── errorMiddleware.js
 │   │
 │   ├── models/
 │   │   ├── User.js
@@ -442,6 +336,11 @@ Merchant-Flow/
 │
 └── frontend/
     ├── src/
+    │   ├── components/
+    │   ├── context/
+    │   ├── layout/
+    │   ├── pages/
+    │   └── services/
     ├── public/
     ├── package.json
     └── vite.config.js
@@ -455,7 +354,6 @@ Merchant-Flow/
 
 ```bash
 git clone https://github.com/uknowme1802/Merchant-Flow.git
-
 cd Merchant-Flow
 ```
 
@@ -465,7 +363,6 @@ cd Merchant-Flow
 
 ```bash
 cd backend
-
 npm install
 ```
 
@@ -473,13 +370,9 @@ Create a `.env` file:
 
 ```env
 PORT=5000
-
 MONGO_URI=your_mongodb_uri
-
 SECRET=your_access_token_secret
-
 REFRESH_SECRET=your_refresh_token_secret
-
 REDIS_URL=your_redis_url
 ```
 
@@ -488,8 +381,6 @@ Start the backend:
 ```bash
 npm start
 ```
-
-Backend:
 
 ```text
 http://localhost:5000
@@ -503,14 +394,13 @@ Open another terminal:
 
 ```bash
 cd frontend
-
 npm install
 ```
 
 Create `.env`:
 
 ```env
-VITE_CONFIG_URL=http://localhost:5000/api
+VITE_API_URL=http://localhost:5000/api
 ```
 
 Start the frontend:
@@ -518,8 +408,6 @@ Start the frontend:
 ```bash
 npm run dev
 ```
-
-Frontend:
 
 ```text
 http://localhost:5173
@@ -529,9 +417,8 @@ http://localhost:5173
 
 # 🧪 Run Tests
 
-From the backend directory:
-
 ```bash
+cd backend
 npm test
 ```
 
@@ -545,31 +432,14 @@ npx jest --detectOpenHandles
 
 # 🐳 Run with Docker Compose
 
-From the backend directory:
-
 ```bash
+cd backend
 docker compose up -d
-```
-
-Check containers:
-
-```bash
 docker ps
-```
-
-Check health:
-
-```bash
 docker inspect --format='{{.State.Health.Status}}' merchantflow-backend
 ```
 
-Expected:
-
-```text
-healthy
-```
-
-Stop:
+Expected: `healthy`
 
 ```bash
 docker compose down
@@ -594,18 +464,17 @@ REDIS_URL=your_redis_url
 ## Frontend
 
 ```env
-VITE_CONFIG_URL=http://localhost:5000/api
+VITE_API_URL=http://localhost:5000/api
 ```
 
-Make sure `.env` is included in `.gitignore`:
+Make sure `.env` is in `.gitignore`:
 
 ```gitignore
 node_modules/
 .env
 .env.*
 !.env.example
-coverage/
-logs/
+dist/
 ```
 
 ---
@@ -653,11 +522,11 @@ GET /health/ready
 
 ## 🔐 Security
 
-- Refresh token rotation
+- Refresh token rotation on every use (currently: refresh token stays valid until logout/expiry)
 - Token reuse detection
 - More granular permissions
-- Advanced rate limiting
-- Security headers
+- Structured/centralized logging (currently console-only)
+- Security headers (e.g. Helmet)
 - Audit logging
 
 ## 📊 Product Enhancements
@@ -670,18 +539,21 @@ GET /health/ready
 
 ## ⚙️ DevOps
 
-- Full-stack Docker Compose environment
+- Full-stack Docker Compose environment (Mongo + Redis containers alongside backend)
 - Nginx reverse proxy
-- Prometheus metrics
-- Grafana dashboards
+- Prometheus metrics / Grafana dashboards
 - Centralized log aggregation
 - Automated deployment pipelines
 
+## 🧪 Testing
+
+- Coverage for `transactionController`, `userController`, and middleware
+- Frontend component/integration tests
+
 ## 🧠 Scalability
 
-- Background job processing
-- BullMQ
-- Kafka event streaming
+- Background job processing (e.g. BullMQ)
+- Event streaming (e.g. Kafka)
 - Microservices architecture
 - Horizontal scaling
 - Distributed caching
@@ -694,58 +566,47 @@ Building MerchantFlow involved solving several real-world engineering challenges
 
 - Production deployment with Render and Vercel
 - Debugging CORS configuration
-- Managing environment variables
+- Managing environment variables across environments
 - MongoDB Atlas connectivity
-- Redis and Upstash integration
-- Redis cache implementation
-- JWT authentication
-- Refresh token management
+- Redis integration with a cache-aside pattern
+- JWT authentication and refresh-token lifecycle management
 - Role-based authorization
 - Real-time communication with Socket.IO
 - API rate limiting
 - Centralized error handling
-- Automated API testing
-- Docker containerization
-- Docker health checks
-- GitHub Actions CI
-- Separating Express application logic from the production server
-- Debugging cloud deployment and build issues
+- Automated API testing with mocked models
+- Docker containerization and health checks
+- GitHub Actions CI for both frontend and backend
+- Separating Express application logic from the production server for testability
 
 ---
 
 # 🎯 Engineering Highlights
 
-MerchantFlow demonstrates practical full-stack engineering principles:
-
 ### Backend
 
-- Modular Express architecture
-- Middleware-driven request processing
+- Modular Express architecture (routes → middleware → controllers → models)
 - Controller-based business logic
-- MongoDB persistence
-- Redis caching
-- JWT authentication
-- Role-based authorization
-- WebSocket communication
+- MongoDB persistence via Mongoose
+- Redis caching with graceful degradation
+- JWT authentication + role-based authorization
+- WebSocket communication via Socket.IO
 
 ### Reliability
 
-- Health endpoints
-- Readiness checks
-- Graceful server shutdown
-- Centralized error handling
-- Rate limiting
-- Automated tests
+- Health and readiness endpoints backed by real DB/Redis checks
+- Graceful server shutdown on SIGTERM/SIGINT
+- Centralized error middleware
+- Rate limiting (global + auth-specific)
+- Automated backend tests
 - Docker health checks
 
 ### DevOps
 
-- Dockerized backend
-- Docker Compose
+- Dockerized backend with Compose support
 - Environment-based configuration
-- GitHub Actions
-- Automated test execution
-- Cloud deployment
+- GitHub Actions CI for both frontend and backend
+- Cloud deployment (Vercel + Render)
 
 ---
 
@@ -759,23 +620,9 @@ Full-Stack Developer | Backend-Focused | Fintech Systems
 
 # ⭐ Final Note
 
-MerchantFlow is designed to demonstrate **real-world full-stack engineering practices**, rather than being a simple tutorial project.
+MerchantFlow is built to demonstrate **practical full-stack engineering practices** — backend architecture, REST APIs, authentication & authorization, real-time systems, Redis caching, database integration, automated testing, Docker containerization, CI/CD, and cloud deployment — rather than being a simple tutorial project.
 
-The project combines:
-
-- Backend architecture
-- REST APIs
-- Authentication & authorization
-- Real-time systems
-- Redis caching
-- Database integration
-- Automated testing
-- Docker containerization
-- CI/CD
-- Cloud deployment
-- Production debugging
-
-> Built to demonstrate how a modern fintech-style application can be designed, tested, containerized, and deployed using production-oriented engineering practices.
+> Built to show how a modern fintech-style application can be designed, tested, containerized, and deployed using production-oriented engineering practices.
 
 ---
 
