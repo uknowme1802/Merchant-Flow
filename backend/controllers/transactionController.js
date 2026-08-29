@@ -1,6 +1,7 @@
 const Transaction = require("../models/Transaction")
 const redis = require("../config/redis");
 const { getIO } = require("../socket");
+const { cache } = require("react");
 
 exports.getTransactions= async (req,res,next)=>{
     try{
@@ -9,13 +10,17 @@ exports.getTransactions= async (req,res,next)=>{
         const cacheKey = `transactions:${page}:${limit}:${status || "all"}`
         
         // Check cache if redis is available
-        if(redis){
-            const cachedData = await redis.get(cacheKey);        
-            if(cachedData){
-                // console.log("Returning cached data for key:", cacheKey);
-                return res.json(JSON.parse(cachedData))
+            if(redis){
+                try {
+                    const cachedData = await redis.get(cacheKey);        
+                    if(cachedData){
+                        // console.log("Returning cached data for key:", cacheKey);
+                        return res.json(JSON.parse(cachedData))
+                    }
+                } catch(cacheErr){
+                    console.warn("Warning: Redis cache read Failed: ", cacheErr.message)
+                }
             }
-        }
 
         const query={};
         if(status) query.status=status;
@@ -37,8 +42,12 @@ exports.getTransactions= async (req,res,next)=>{
         
         // Cache the response if redis is available
         if(redis){
+            try {
             await redis.set(cacheKey, JSON.stringify(response), "EX", 60)
             // console.log("Cached data for key:", cacheKey);
+            } catch (cacheErr){
+                console.warn("Warning: Redis cache write Failed: ", cacheErr.message)
+            }
         }
 
         res.json(response);
