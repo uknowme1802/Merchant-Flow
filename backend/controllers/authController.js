@@ -121,7 +121,7 @@ exports.verifyTwoFactorLogin = async (req, res, next) => {
     }
     const user = await User.findById(decoded.id).select("+twoFactor.secret+refreshToken");
 
-    if(!user || !user.twoFactor.enabled || !user.twoFactor.secret){
+    if(!user || !user.twoFactor.enabled || !user.twoFactor?.secret){
       return res.status(400).json({
         success: false,
         message: "Two Factor authentication is not enabled for this user"
