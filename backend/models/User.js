@@ -22,6 +22,22 @@ const userSchema = new mongoose.Schema({
         type: String,
         default: null,
         select: false
+    },
+    twoFactor:{
+        enabled: {
+            type: Boolean,
+            default: false
+        },
+        secret:{
+            type: String,
+            default: null,
+            select: false
+        },
+        tempSecret:{
+            type: String,
+            default: null,
+            select: false
+        }
     }
 }, {timestamps:true});
 
