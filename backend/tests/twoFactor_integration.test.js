@@ -28,7 +28,7 @@ describe("2fa end-to-end flow",()=>{
             save:jest.fn().mockResolvedValue(true)
         };
 
-        User.findOne().mockReturnValue({
+        User.findOne.mockReturnValue({
             select: jest.fn().mockResolvedValue(mockUser)
         })
 
@@ -67,7 +67,7 @@ describe("2fa end-to-end flow",()=>{
             _id: "user-id-456",
             email: "twofa@test.com",
             role: "user",
-            twoFactor: {enable: true, secret, tempSecret: null },
+            twoFactor: {enabled: true, secret, tempSecret: null },
             save: jest.fn().mockResolvedValue(true)
         };
 
@@ -96,7 +96,7 @@ describe("2fa end-to-end flow",()=>{
             email: "no2fa@test.com",
             role: "user",
             password: await bcrypt.hash("Password123!", 10),
-            refreshToken,
+            refreshToken:null,
             twoFactor: { enabled: false, secret: null, tempSecret: null },
             save: jest.fn().mockResolvedValue(true)
         };
@@ -105,8 +105,8 @@ describe("2fa end-to-end flow",()=>{
             select: jest.fn().mockResolvedValue(mockUser)
         })
 
-        const res = await reques(app)
-        .post("api/auth/login")
+        const res = await request(app)
+        .post("/api/auth/login")
         .send({ email: "no2fa@test.com", password: "Password123!"});
 
         expect(res.statusCode).toBe(200);
