@@ -1,4 +1,4 @@
-import { LayoutDashboard, CreditCard, BarChart3 } from "lucide-react"
+import { LayoutDashboard, CreditCard, BarChart3, Shield, ShieldCheck } from "lucide-react"
 import { useContext } from "react"
 import { NavLink } from "react-router-dom"
 import { AuthContext } from "../context/AuthContext"
@@ -30,6 +30,12 @@ export default function Sidebar(){
                             <LayoutDashboard size={18} /> Users
                     </NavLink>
                 )}
+
+                <NavLink to="/security" className={({isActive})=>`flex items-center gap-3 p-2 rounded-lg ${isActive?
+                    "bg-indigo-100 text-indigo-600": "text-gray-600"
+                }`}>
+                    <ShieldCheck size={18} /> Security
+                </NavLink>
             </nav>
         </div>
     )

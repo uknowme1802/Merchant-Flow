@@ -5,6 +5,8 @@ import Dashboard from "./pages/Dashboard";
 import Transactions from "./pages/Transactions"
 import Analytics from "./pages/Analytics"
 import Users from "./pages/Users";
+import Security from "./pages/Security";
+
 
 function ProtectedRoute({children}){
   const token = localStorage.getItem("user");
@@ -27,6 +29,7 @@ function App(){
           <Route path="/transactions" element={<Transactions/>}/>
           <Route path="/analytics" element={<Analytics/>}/>
           <Route path = "/users" element={<Users />} />
+          <Route path="/security" element={<Security />} />
         </Route>
       </Routes>
     </BrowserRouter>

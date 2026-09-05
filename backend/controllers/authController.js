@@ -3,6 +3,7 @@ require("dotenv").config();
 //const { v4: uuidv4 } = require("uuid");
 //const crypto = require("crypto");
 const bcrypt = require("bcryptjs")
+const {authenticator} = require("otplib");
 const User = require("../models/User");
 const jwt = require("jsonwebtoken");
 
@@ -17,6 +18,18 @@ const signAccessToken = (user) =>
 
 const signRefreshToken = (user) =>
   jwt.sign({id:user._id}, REFRESH_SECRET, { expiresIn:"7d" })
+
+const signPendingToken = (user) =>
+  jwt.sign({id: user._id, type: "2fa_pending"}, SECRET, { expiresIn: "5m"})
+
+const issueSessionTokens = async (user) => {
+  const accessToken = signAccessToken(user);
+  const refreshToken = signRefreshToken(user);
+
+  user.refreshToken = refreshToken;
+  await user.save();
+  return {accessToken, refreshToken}
+}
 
 
 exports.login = async (req, res, next) => {
@@ -52,11 +65,22 @@ exports.login = async (req, res, next) => {
       });
     }
 
-    const accessToken = signAccessToken(user);
-    const refreshToken = signRefreshToken(user);
+    // const accessToken = signAccessToken(user);
+    // const refreshToken = signRefreshToken(user);
 
-    user.refreshToken = refreshToken;
-    await user.save();
+    if (user.twoFactor?.enabled){
+      const pendingToken = signPendingToken(user);
+      return res.json({
+        success: true,
+        twoFactorRequired: true,
+        pendingToken
+      })
+    }
+    
+    const {accessToken, refreshToken} = await issueSessionTokens(user);
+
+    // user.refreshToken = refreshToken;
+    // await user.save();
 
     return res.json({
       success: true,
@@ -68,6 +92,62 @@ exports.login = async (req, res, next) => {
     next(err)
   }
 };
+
+exports.verifyTwoFactorLogin = async (req, res, next) => {
+  try {
+    const {pendingToken, token} = req.body;
+
+    if(!pendingToken || !token){
+      return res.status(400).json({
+        success: false,
+        message: "Pending token and authentication code is required!"
+      })
+    }
+
+    let decoded;
+    try{
+      decoded = jwt.verify(pendingToken, SECRET);
+    } catch (err){
+      return res.status(403).json({
+        success: false,
+        message: "Invalid or expired token - please login again!"
+      })
+    }
+    if (decoded.type!=="2fa_pending"){
+      return res.status(403).json({
+        success: false,
+        message: "Invalid session token"
+      })
+    }
+    const user = await User.findById(decoded.id).select("+twoFactor.secret+refreshToken");
+
+    if(!user || !user.twoFactor.enabled || !user.twoFactor.secret){
+      return res.status(400).json({
+        success: false,
+        message: "Two Factor authentication is not enabled for this user"
+      })
+    }
+    const isValid = authenticator.check(token, user.twoFactor.secret);
+    if(!isValid){
+      return res.status(401).json({
+        success: false,
+        message: "Invalid authentication code!"
+      })
+    }
+    const {accessToken, refreshToken} = await issueSessionTokens(user);
+
+    return res.json({
+      success: true,
+      accessToken,
+      refreshToken,
+      user: {
+        id: user._id, email: user.email, role: user.role
+      }
+    })
+  } catch(err){
+    next(err);
+  }
+}
 
 
 // REFRESH TOKEN API
