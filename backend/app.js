@@ -12,6 +12,8 @@ const transactionRoutes = require("./routes/transactionRoutes");
 const userRoutes = require("./routes/userRoutes");
 const healthRoutes = require("./routes/healthRoutes");
 const twoFactorRoutes  = require("./routes/twoFactorRoutes");
+const checkoutRoutes = require("./routes/checkoutRoutes");
+const ValidPaymentRoutes = require("./routes/validPaymentRoutes");
 
 const app = express();
 
@@ -31,6 +33,8 @@ app.use("/api/dashboard", dashboardRoutes);
 app.use("/api/transactions", transactionRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/2fa", twoFactorRoutes);
+app.use("/api/checkout", checkoutRoutes);
+app.use("/api/valid-payments", ValidPaymentRoutes);
 app.use("/health", healthRoutes);
 
 app.get("/", (req,res)=>{
