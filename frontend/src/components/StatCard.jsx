@@ -5,7 +5,7 @@ export default function StatCard({title,value,icon,onClick}){
 
   <div className="bg-white p-6 rounded-xl shadow hover:shadow-lg transition">
 
-   <div className="flex justify-between">
+   <div className="flex justify-between items-start">
 
     <div>
 
@@ -19,7 +19,7 @@ export default function StatCard({title,value,icon,onClick}){
 
     </div>
 
-    <div className="bg-indigo-100 p-3 rounded">
+    <div className="bg-indigo-100 text-indigo-600 w-12 h-12 flex items-center justify-center rounded-lg shrink-0">
       {icon}
     </div>
 

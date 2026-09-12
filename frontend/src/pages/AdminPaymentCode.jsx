@@ -3,7 +3,7 @@ import API from "../services/api";
 import Button from "../components/ui/Button";
 import toast from "react-hot-toast";
 
-export default function AdminPaymentCodes(){
+export default function AdminPaymentCode(){
     const [amount, setAmount] = useState("");
     const [utr, setUtr] = useState("");
     const [saving, setSaving] = useState(false);
@@ -98,12 +98,17 @@ export default function AdminPaymentCodes(){
                 ):payments.length === 0? (
                     <p className="text-sm text-gray-500">No payment codes added yet</p>
                 ):(
-                    <div className="space-y-2">
+                    <div className="space-y-1">
+                        <div className="grid grid-cols-[1fr_auto_auto] gap-4 text-xs text-gray-400 uppercase pb-2 border-b">
+                            <span>UTR</span>
+                            <span className="text-right">Amount</span>
+                            <span className="w-20 text-right">Status</span>
+                        </div>
                         {payments.map((p) => (
-                            <div key={p._id} className="flex justify-between text-sm border-b pb-2">
+                            <div key={p._id} className="grid grid-cols-[1fr_auto_auto] gap-4 items-center text-sm border-b py-2">
                                 <span className="font mono">{p.utr}</span>
-                                <span>₹{p.amount}</span>
-                                <span className={p.used ? "text-gray-400": "text-green-600"}>
+                                <span className="text-right">₹{p.amount}</span>
+                                <span className={`w-20 text-right ${p.used ? "text-gray-400": "text-green-600"}`}>
                                     {p.used ? "Used" : "Available"}
                                 </span>
                             </div>
