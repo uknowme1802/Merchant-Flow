@@ -2,8 +2,8 @@ name: Keep MerchantFlow Backend Alive
 
 on:
   schedule:
-  #Run every 5 minutes
-  - cron: "*/5 * * * *"
+    #Run every 5 minutes
+    - cron: "*/5 * * * *"
 
   # Allow manual execution from Github Actions
   workflow_dispatch:
@@ -12,19 +12,19 @@ jobs:
   keep-alive:
     runs-on: ubuntu-latest
 
-  steps:
-  - name: Ping Render Health endpoint
-    run: |
-      echo "Pinging MerchantFlow backend..."
-      response=$(curl -s -o /dev/null -w "%{https_code}" \
-        --max-time 30\
-        https://merchant-flow-seuw.onrender.com/health)
+    steps:
+      - name: Ping Render Health endpoint
+        run: |
+          echo "Pinging MerchantFlow backend..."
+          response=$(curl -s -o /dev/null -w "%{https_code}" \
+            --max-time 30\
+            https://merchant-flow-seuw.onrender.com/health)
 
-     echo "HHTP status: $response"
+          echo "HHTP status: $response"
 
-      if [ "$response" -lt 200 ] || [ "$response" -g 300]; then
-        echo "Backend health check failed."
-        exit 1
-      fi 
+          if [ "$response" -lt 200 ] || [ "$response" -g 300]; then
+            echo "Backend health check failed."
+            exit 1
+          fi 
 
-      echo "MerchantFlow backend is healthy"
+          echo "MerchantFlow backend is healthy"

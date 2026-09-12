@@ -24,7 +24,7 @@ API.interceptors.response.use(
         const status = error.response?.status
         const url = error. config?.url;
 
-        if(url.includes("/auth/login")){
+        if(url?.includes("/auth/login") || url?.includes("auth/2fa/verify-login")){
             return Promise.reject(error);
         }
 
