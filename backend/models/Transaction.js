@@ -18,6 +18,15 @@ const transactionSchema = new mongoose.Schema({
     date: {
         type: String,
         required: true
+    },
+    utr: {
+        type: String,
+        required: null
+    },
+    userId:{
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "User",
+        default: null
     }
 }, { timestamps: true });
 
