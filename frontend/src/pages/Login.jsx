@@ -61,7 +61,7 @@ export default function Login(){
   }
 
   try{
-    const res = await API.post("auth/2fa/verify-login", {
+    const res = await API.post("/auth/2fa/verify-login", {
       pendingToken, 
       token: code
     });
