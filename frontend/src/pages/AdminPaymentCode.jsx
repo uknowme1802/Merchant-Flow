@@ -3,7 +3,7 @@ import API from "../services/api";
 import Button from "../components/ui/Button";
 import toast from "react-hot-toast";
 
-export default function AdminPaymentCode(){
+export default function AdminPaymentCodes(){
     const [amount, setAmount] = useState("");
     const [utr, setUtr] = useState("");
     const [saving, setSaving] = useState(false);
@@ -13,7 +13,7 @@ export default function AdminPaymentCode(){
 
     const fetchPayments = async () => {
         try {
-            const res = await API.post("/valid-payments");
+            const res = await API.get("/valid-payments");
             setPayments(res.data.data);
         } catch{
             toast.error("Failed to load Payment codes")
@@ -42,7 +42,7 @@ export default function AdminPaymentCode(){
     },[]);
 
     const handleUtrChange = (e) => {
-        setUtr(e.traget.value.replace(/\D/g, "").slice(0,12));
+        setUtr(e.target.value.replace(/\D/g, "").slice(0,12));
     };
 
     const saveUtr = async()=>{
@@ -82,8 +82,8 @@ export default function AdminPaymentCode(){
 
                     <Button onClick={saveUtr}
                     disabled={saving}
-                    className="w-full bg-indigp-600 hover:bg-indigo-700 text-white px-4 py-2 rounded">
-                        {saving?"Saving...":"Save UTR"}
+                    className="w-full bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded">
+                        {saving ? "Saving...":"Save UTR"}
                     </Button>
                 </div>
             </div>
