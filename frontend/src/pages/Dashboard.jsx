@@ -7,7 +7,7 @@ import { useNavigate } from "react-router-dom"
 import RevenueChart from "../components/charts/RevenueChart"
 import TransactionChart from "../components/charts/TransactionChart"
 import PaymentPieChart from "../components/charts/PaymentPieChart"
-// import Transactions from "./Transactions";
+
 
 export default function Dashboard() {
   const navigate = useNavigate();
@@ -16,9 +16,6 @@ export default function Dashboard() {
   
   useEffect(()=>{
     fetchStats();
-    // API.get("/dashboard")
-    // .then(res=>setStats(res.data))
-    // .catch(err=>console.error(err))
   },[]);
 
   const fetchStats = async () =>{
@@ -42,10 +39,6 @@ export default function Dashboard() {
       </div>
     );
   }
-
-  // if(!stats){
-  //   return <p>Loading data...</p>
-  // } 
 
   return (
     <div>
@@ -88,9 +81,9 @@ export default function Dashboard() {
       {/* Charts Section */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-8">
 
-        <RevenueChart />
+        <RevenueChart data = {stats.revenueChartData} />
 
-        <TransactionChart />
+        <TransactionChart data = {stats.transactionChartData} />
 
         <PaymentPieChart />
 
