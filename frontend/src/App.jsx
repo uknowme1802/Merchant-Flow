@@ -6,6 +6,8 @@ import Transactions from "./pages/Transactions"
 import Analytics from "./pages/Analytics"
 import Users from "./pages/Users";
 import Security from "./pages/Security";
+import Checkout from "./pages/Checkout";
+import AdminPaymentCode from "./pages/AdminPaymentCode";
 
 
 function ProtectedRoute({children}){
@@ -30,6 +32,8 @@ function App(){
           <Route path="/analytics" element={<Analytics/>}/>
           <Route path = "/users" element={<Users />} />
           <Route path="/security" element={<Security />} />
+          <Route path="/checkout" element={<Checkout />} />
+          <Route path="/payment-code" element={<AdminPaymentCode />} />
         </Route>
       </Routes>
     </BrowserRouter>

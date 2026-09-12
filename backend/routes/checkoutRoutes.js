@@ -7,7 +7,7 @@ const rateLimiter= require("../middleware/rateLimiter");
 const { createCheckout, verifyPayment, getCheckoutStatus } = require("../controllers/checkoutController");
 
 router.post("/", rateLimiter, authMiddleware, createCheckout);
-router.post("/", rateLimiter, authMiddleware, getCheckoutStatus);
-router.post("/", rateLimiter, authMiddleware, verifyPayment);
+router.get("/:id", rateLimiter, authMiddleware, getCheckoutStatus);
+router.post("/:id/verify", rateLimiter, authMiddleware, verifyPayment);
 
 module.exports = router;

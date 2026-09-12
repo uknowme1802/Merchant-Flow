@@ -4,7 +4,6 @@ const request = require("supertest");
 const jwt = require("jsonwebtoken");
 const ValidPayment = require("../models/ValidPayment");
 const app = require("../app");
-const { build } = require("joi");
 
 describe("Admin ValidPayment management (GUI-created UTR + amount pairs)",() => {
     beforeEach(()=>{
@@ -19,7 +18,7 @@ describe("Admin ValidPayment management (GUI-created UTR + amount pairs)",() => 
             _id: "vp-1",
             utr: "968574859685",
             amount: 500,
-            used:false
+            used: false
         });
 
         const adminToken = buildAccessToken("admin-1","admin");
@@ -31,7 +30,7 @@ describe("Admin ValidPayment management (GUI-created UTR + amount pairs)",() => 
 
         expect(res.statusCode).toBe(201);
         expect(res.body.success).toBe(true);
-        expect(ValidPayment.create).toHavebeenCalledWith({utr: "968574859685", amount: 500});
+        expect(ValidPayment.create).toHaveBeenCalledWith({utr: "968574859685", amount: 500});
     })
 
     test("a regular user cannot create a valid payment pair", async()=> {
@@ -39,6 +38,54 @@ describe("Admin ValidPayment management (GUI-created UTR + amount pairs)",() => 
 
         const res = await request(app)
             .post("/api/valid-payments")
-            .set("Authorization", `Bearer ${token}`)
+            .set("Authorization", `Bearer ${userToken}`)
+            .send({amount: 500, utr:"968574859685"})
+
+        expect(res.statusCode).toBe(403);
+        expect(ValidPayment.create).not.toHaveBeenCalled();
+    });
+
+    test("rejects a UTR that isn't exactly 12 digits", async()=>{
+        const adminToken = buildAccessToken("admin-1", "admin");
+
+        const res = await request(app)
+            .post("/api/valid-payments")
+            .set("Authorization", `Bearer ${adminToken}`)
+            .send({amount: 500, utr: "123"});
+
+        expect(res.statusCode).toBe(400);
+        expect(ValidPayment.create).not.toHaveBeenCalled();
+    })
+
+    test("rejects a duplicate UTR with 409", async () =>{
+        const duplicateErr = new Error("duplicate key");
+        duplicateErr.code = 11000;
+        ValidPayment.create.mockRejectedValue(duplicateErr);
+
+        const adminToken = buildAccessToken("admin-1", "admin");
+
+        const res = await request(app)
+            .post("/api/valid-payments")
+            .set("Authorization", `Bearer ${adminToken}`)
+            .send({amount: 500, utr: "968574859685"});
+
+        expect(res.statusCode).toBe(409);
+    })
+
+    test("admin can list all valid payments", async () => {
+        ValidPayment.find.mockReturnValue({
+            sort: jest.fn().mockResolvedValue([
+                { utr: "968574859685", amount: 500, used: false }
+            ])
+        });
+
+        const adminToken = buildAccessToken("admin-1", "admin");
+
+        const res = await request(app)
+            .get("/api/valid-payments")
+            .set("Authorization", `Bearer ${adminToken}`)
+
+        expect(res.statusCode).toBe(200);
+        expect(res.body.data).toHaveLength(1);
     })
 })
