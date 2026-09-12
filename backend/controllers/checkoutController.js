@@ -102,7 +102,7 @@ exports.verifyPayment = async (req, res, next) => {
                 message: "Order not found"
             })
             }
-        if(req.user.role !==" admin" && String(txn.userId) !== String(req.user.id)){
+        if(req.user.role !=="admin" && String(txn.userId) !== String(req.user.id)){
             return res.status(403).json({
                 success: false,
                 message: "Not authorized to verify this order"
@@ -120,8 +120,22 @@ exports.verifyPayment = async (req, res, next) => {
         const matchingPayment = await ValidPayment.findOne({
             utr: trimmedUtr,
             amount: txn.amount,
-            used: false
+            //used: false
         })
+
+        if (matchingPayment && matchingPayment.used){
+            txn.utr = trimmedUtr;
+            txn.status =" Pending";
+            await txn.save();
+
+            return res.json({
+                success:true,
+                verified: false,
+                alreadyUsed: true,
+                data: txn,
+                message: "This UTR has already been used!"
+            })
+        }
 
         if (!matchingPayment){
             txn.utr = trimmedUtr;

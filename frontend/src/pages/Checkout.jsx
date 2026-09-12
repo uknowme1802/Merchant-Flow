@@ -2,6 +2,7 @@ import { useState } from "react";
 import API from "../services/api";
 import Button from "../components/ui/Button";
 import toast from "react-hot-toast";
+import { CheckCircle2 } from "lucide-react";
 
 export default function Checkout() {
     const [step, setStep] = useState("amount");
@@ -49,7 +50,10 @@ export default function Checkout() {
 
             if(res.data.verified){
                 setOrder(res.data.data);
-                setStep("Success");
+                setStep("success");
+            } else if(res.data.alreadyUsed){
+                toast.error("This UTR has already been used for another order.");
+                setPendingMessage(res.data.message);
             } else {
                 setPendingMessage(res.data.message || "Payment could not be verified yet");
             }
@@ -133,9 +137,13 @@ export default function Checkout() {
                 )}
 
                 {step === "success" && (
-                    <div className="text-center space-y-3">
-                        <p className="text-gree-600 font-semibold text-lg">
+                    <div className="text-center space-y-3 py-4">
+                        <CheckCircle2 className="mx-auto text-green-600" size={64} strokeWidth={1.5} />
+                        <p className="text-green-600 font-semibold text-lg">
                             ✅Payment Successfull
+                        </p>
+                        <p className="text-sm text-gray-600">
+                            ₹{order.amount} verified against UTR {order.utr}
                         </p>
 
                         <Button onClick={startOver} className="w-full bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded">
