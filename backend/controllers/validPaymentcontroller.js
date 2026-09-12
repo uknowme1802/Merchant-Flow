@@ -2,19 +2,19 @@ const ValidPayment = require("../models/ValidPayment");
 
 const UTR_REGEX = /^\d{12}$/;
 
-exports.createValidPayment = async (req,resizeBy,next) => {
+exports.createValidPayment = async (req,res,next) => {
     try {
         const { amount, utr} = req.body;
 
-        const numbericAmount = Number(amount);
-        if(!amount|| Number.isNaN(numbericAmount)|| numbericAmount<=0){
+        const numericAmount = Number(amount);
+        if(!amount|| Number.isNaN(numericAmount)|| numericAmount<=0){
             return res.status(400).json({
                 success: false,
                 message: "A valid number is required!"
             })
         }
 
-        if (!utr || typeof utr!=="string" || UTR_REGEX.test(utr.trim())){
+        if (!utr || typeof utr!=="string" || !UTR_REGEX.test(utr.trim())){
             return res.status(400).json({
                 success: false,
                 message: "UTR must be exactly 12 digits!"
@@ -23,7 +23,7 @@ exports.createValidPayment = async (req,resizeBy,next) => {
 
         const payment = await ValidPayment.create({
             utr: utr.trim(),
-            amount: numbericAmount
+            amount: numericAmount
         });
 
         res.status(201).json({
@@ -43,7 +43,7 @@ exports.createValidPayment = async (req,resizeBy,next) => {
 
 exports.listValidPayments = async (req, res, next)=> {
     try{ 
-        const payments =(await ValidPayment.find()).toSorted({createdAt:-1});
+        const payments =await ValidPayment.find().sort({createdAt:-1});
         res.json({
             success: true,
             data: payments

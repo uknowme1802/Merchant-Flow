@@ -18,8 +18,8 @@ exports.createCheckout = async (req, res, next) => {
     try{
         const { amount } = req.body;
 
-        const numbericAmount = Number(amount);
-        if(!amount || Number.isNaN(numbericAmount) || numbericAmount<=0){
+        const numericAmount = Number(amount);
+        if(!amount || Number.isNaN(numericAmount) || numericAmount<=0){
             return res.status(400).json({
                 success: false,
                 message: "A valid number is required!"
@@ -30,20 +30,21 @@ exports.createCheckout = async (req, res, next) => {
 
         const txn = await Transaction.create({
             id: txnId,
-            amount: numbericAmount,
+            amount: numericAmount,
             status: "Pending",
-            date: new Date().toString(),
+            date: new Date().toISOString(),
             utr: null,
             userId: req.user.id
         });
 
-        const upiLink = `upi://pay?pa=${encodeURIComponent(UPI_ID)}&pn=${encodeURIComponent(UPI_NAME)}&am=${numbericAmount}&cu=INR&tn=${encodeURIComponent(txnId)}`;
+        const upiLink = `upi://pay?pa=${encodeURIComponent(UPI_ID)}&pn=${encodeURIComponent(UPI_NAME)}&am=${numericAmount}&cu=INR&tn=${encodeURIComponent(txnId)}`;
 
         const qrCode= await qrcode.toDataURL(upiLink);
 
         res.status(201).json({
             success: true,
             data: txn,
+            qrCode,
             upiId: UPI_ID
         });
     } catch(err){
@@ -61,7 +62,7 @@ exports.getCheckoutStatus = async (req, res, next) => {
                 message: "Order not found"
             })
         }
-        if(req.user.role !=="admin" && String(txn.userId) !== String(req.res.id)){
+        if(req.user.role !=="admin" && String(txn.userId) !== String(req.user.id)){
             return res.status(403).json({
                 success: false,
                 message:"Not authorized to view this order"
@@ -101,13 +102,13 @@ exports.verifyPayment = async (req, res, next) => {
                 message: "Order not found"
             })
             }
-        if(req.user.role !==" admin" || String(txn.userId) !== String(req.user.id)){
+        if(req.user.role !==" admin" && String(txn.userId) !== String(req.user.id)){
             return res.status(403).json({
                 success: false,
                 message: "Not authorized to verify this order"
             })
         }
-        if(txn.status == "Success") {
+        if(txn.status === "Success") {
             return res.json({
                 success: true,
                 verified: true,
@@ -129,7 +130,7 @@ exports.verifyPayment = async (req, res, next) => {
 
             return res.json({
                 success: true,
-                verified: true,
+                verified: false,
                 data: txn,
                 message: "Payment could not be verified yet - order remainss pending."
             })

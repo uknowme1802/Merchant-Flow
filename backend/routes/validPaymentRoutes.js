@@ -4,9 +4,9 @@ const router = express.Router();
 const authMiddleware = require("../middleware/authMiddleware");
 const adminMiddleware = require("../middleware/adminMiddleware");
 
-const { createVallidPayment, listValidPayments } = require("../controllers/validPaymentcontroller");
+const { createValidPayment, listValidPayments } = require("../controllers/validPaymentcontroller");
 
-router.post("/", authMiddleware, adminMiddleware, createVallidPayment);
-router.post("/", authMiddleware, adminMiddleware, listValidPayments);
+router.post("/", authMiddleware, adminMiddleware, createValidPayment);
+router.get("/", authMiddleware, adminMiddleware, listValidPayments);
 
 module.exports = router;

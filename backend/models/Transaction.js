@@ -21,7 +21,7 @@ const transactionSchema = new mongoose.Schema({
     },
     utr: {
         type: String,
-        required: true
+        required: null
     },
     userId:{
         type: mongoose.Schema.Types.ObjectId,

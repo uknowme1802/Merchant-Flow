@@ -1,5 +1,5 @@
 jest.mock("../models/Transaction.js");
-jest.mocl("../models/ValidPayment.js");
+jest.mock("../models/ValidPayment.js");
 
 const request = require("supertest");
 const jwt = require("jsonwebtoken");
@@ -7,7 +7,7 @@ const Transaction = require("../models/Transaction");
 const ValidPayment = require("../models/ValidPayment");
 const app = require("../app");
 
-describe("Checkout flow (QR generation + 12-digits UTR verufication",()=> {
+describe("Checkout flow (QR generation + 12-digits UTR verification",()=> {
     beforeEach(()=> {
         jest.clearAllMocks();
     })
@@ -35,11 +35,12 @@ describe("Checkout flow (QR generation + 12-digits UTR verufication",()=> {
 
             expect(res.statusCode).toBe(201);
             expect(res.body.data.status).toBe("Pending");
-            expect(res.body.qrCode).toBe(/^data:image\/png;base64,/);
+            expect(res.body.qrCode).toMatch(/^data:image\/png;base64,/);
         });
 
         test("verify rejects the utr that isn't exactly 12 digits", async () => {
-            const token = await request(app)
+            const token = buildAccessToken("user-1")
+            const res = await request(app)
                 .post("/api/checkout/order-2/verify")
                 .set("Authorization", `Bearer ${token}`)
                 .send({utr: "12345"})
@@ -52,7 +53,7 @@ describe("Checkout flow (QR generation + 12-digits UTR verufication",()=> {
         test("verify succeeds when a valid 12-digits UTR + amount match an unused ValidPayment", async ()=> {
             const txn = {
                 _id: "order-3",
-                amount:"500",
+                amount:500,
                 status: "Pending",
                 userId: "user-1",
                 utr: null,
@@ -67,7 +68,7 @@ describe("Checkout flow (QR generation + 12-digits UTR verufication",()=> {
             };
 
             Transaction.findById.mockResolvedValue(txn);
-            ValidPayment = Transaction.findOne.mockResolvedValue(matchingPayment);
+            ValidPayment.findOne.mockResolvedValue(matchingPayment);
 
             const token = buildAccessToken("user-1");
 
@@ -77,7 +78,7 @@ describe("Checkout flow (QR generation + 12-digits UTR verufication",()=> {
                 .send({utr: "968574859685"});
 
             expect(res.statusCode).toBe(200);
-            expect(res.body.verified).tobe(true);
+            expect(res.body.verified).toBe(true);
             expect(txn.status).toBe("Success");
             expect(matchingPayment.used).toBe(true);
         });
@@ -100,7 +101,7 @@ describe("Checkout flow (QR generation + 12-digits UTR verufication",()=> {
             const res = await request(app)
                 .post("/api/checkout/order-4/verify")
                 .set("Authorization", `Bearer ${token}`)
-                send({utr: "000000000000"});
+                .send({utr: "000000000000"});
 
             expect(res.statusCode).toBe(200);
             expect(res.body.verified).toBe(false);
