@@ -53,7 +53,9 @@ exports.getDashboardStats = async (req,res)=>{
         totalRevenue,
         successCount,
         failedCount,
-        totalTransactions: transactions.length
+        totalTransactions: transactions.length,
+        revenueChartData,
+        transactionChartData
         });
     } catch(err){
         res.status(500).json({message: "Server Error"})
