@@ -106,7 +106,7 @@ export default function AdminPaymentCode(){
                         </div>
                         {payments.map((p) => (
                             <div key={p._id} className="grid grid-cols-[1fr_auto_auto] gap-4 items-center text-sm border-b py-2">
-                                <span className="font mono">{p.utr}</span>
+                                <span className="font-mono">{p.utr}</span>
                                 <span className="text-right">₹{p.amount}</span>
                                 <span className={`w-20 text-right ${p.used ? "text-gray-400": "text-green-600"}`}>
                                     {p.used ? "Used" : "Available"}

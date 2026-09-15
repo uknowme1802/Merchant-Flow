@@ -125,7 +125,7 @@ exports.verifyPayment = async (req, res, next) => {
 
         if (matchingPayment && matchingPayment.used){
             txn.utr = trimmedUtr;
-            txn.status =" Pending";
+            txn.status ="Pending";
             await txn.save();
 
             return res.json({
