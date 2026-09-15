@@ -72,7 +72,7 @@ export default function Dashboard() {
 
         <StatCard
           title="Total Transactions"
-          value={stats.TotalTransactions}
+          value={stats.totalTransactions}
           icon={<Users />}
         />
 

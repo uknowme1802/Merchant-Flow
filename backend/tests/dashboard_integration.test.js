@@ -18,9 +18,9 @@ describe("Dashboard stats - real data aggregation for charts", ()=>{
     
         test("aggregates revenue ny month and volume by weekday real transaction dates", async () => {
             Transaction.find.mockResolvedValue([
-                {amount: 100, status: "Success", date:"2026-01-1510:00:00.000Z"},
-                {amount: 200, status: "Pending", date:"2026-02-1610:00:00.000Z"},
-                {amount: 300, status: "Success", date:"2026-01-2510:00:00.000Z"},
+                {amount: 100, status: "Success", date:"2026-01-15T10:00:00.000Z"},
+                {amount: 200, status: "Pending", date:"2026-02-16T10:00:00.000Z"},
+                {amount: 300, status: "Success", date:"2026-01-25T10:00:00.000Z"},
                 {amount: 400, status: "Failed", date:"not-a-real-date"},
             ])
 
@@ -45,8 +45,8 @@ describe("Dashboard stats - real data aggregation for charts", ()=>{
             const thr = res.body.transactionChartData.find(d=>d.day === "thr");
             const sun = res.body.transactionChartData.find(d=>d.day ==="sun");
 
-            expect(mon.transactions).toBe(100);
-            expect(thr.transactions).toBe(200);
+            expect(mon.transactions).toBe(200);
+            expect(thr.transactions).toBe(100);
             expect(sun.transactions).toBe(300);
 
             expect(res.body.revenueChartData).toHaveLength(12);
