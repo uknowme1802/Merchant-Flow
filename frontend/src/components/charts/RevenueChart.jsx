@@ -8,16 +8,16 @@ import {
     ResponsiveContainer
 } from "recharts";
 
-const data =[
-    {month:"Jan",revenue:968045},
-    {month:"Feb",revenue:482913},
-    {month:"Mar",revenue:760154},
-    {month:"Apr",revenue:295671},
-    {month:"May",revenue:831047},
-    {month:"Jun",revenue:604829}
-]
+// const data =[
+//     {month:"Jan",revenue:968045},
+//     {month:"Feb",revenue:482913},
+//     {month:"Mar",revenue:760154},
+//     {month:"Apr",revenue:295671},
+//     {month:"May",revenue:831047},
+//     {month:"Jun",revenue:604829}
+// ]
 
-export default function RevenueChart(){
+export default function RevenueChart({ data }){
     return (
         <div className="card h-80">
             <h2 className="text-lg font-semibold mb-4">Revenue Overview</h2>
@@ -33,7 +33,7 @@ export default function RevenueChart(){
                     dataKey="revenue"
                     strokeWidth={3}
                     />
-                </LineChart>
+                </ LineChart>
             </ ResponsiveContainer>
         </div>
     );

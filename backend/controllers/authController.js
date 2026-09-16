@@ -121,7 +121,7 @@
       }
       const user = await User.findById(decoded.id).select("+twoFactor.secret +refreshToken");
 
-      console.log(`DEBUG user.twoFactor ${user?.twoFactor}`);
+     
       if(!user || !user.twoFactor.enabled || !user.twoFactor?.secret){
         return res.status(400).json({
           success: false,

@@ -13,7 +13,7 @@ export default function AdminPaymentCode(){
 
     const fetchPayments = async () => {
         try {
-            const res = await API.post("/valid-payments");
+            const res = await API.get("/valid-payments");
             setPayments(res.data.data);
         } catch{
             toast.error("Failed to load Payment codes")
@@ -42,7 +42,7 @@ export default function AdminPaymentCode(){
     },[]);
 
     const handleUtrChange = (e) => {
-        setUtr(e.traget.value.replace(/\D/g, "").slice(0,12));
+        setUtr(e.target.value.replace(/\D/g, "").slice(0,12));
     };
 
     const saveUtr = async()=>{
@@ -82,8 +82,8 @@ export default function AdminPaymentCode(){
 
                     <Button onClick={saveUtr}
                     disabled={saving}
-                    className="w-full bg-indigp-600 hover:bg-indigo-700 text-white px-4 py-2 rounded">
-                        {saving?"Saving...":"Save UTR"}
+                    className="w-full bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded">
+                        {saving ? "Saving...":"Save UTR"}
                     </Button>
                 </div>
             </div>
@@ -98,12 +98,17 @@ export default function AdminPaymentCode(){
                 ):payments.length === 0? (
                     <p className="text-sm text-gray-500">No payment codes added yet</p>
                 ):(
-                    <div className="space-y-2">
+                    <div className="space-y-1">
+                        <div className="grid grid-cols-[1fr_auto_auto] gap-4 text-xs text-gray-400 uppercase pb-2 border-b">
+                            <span>UTR</span>
+                            <span className="text-right">Amount</span>
+                            <span className="w-20 text-right">Status</span>
+                        </div>
                         {payments.map((p) => (
-                            <div key={p._id} className="flex justify-between text-sm border-b pb-2">
-                                <span className="font mono">{p.utr}</span>
-                                <span>₹{p.amount}</span>
-                                <span className={p.used ? "text-gray-400": "text-green-600"}>
+                            <div key={p._id} className="grid grid-cols-[1fr_auto_auto] gap-4 items-center text-sm border-b py-2">
+                                <span className="font-mono">{p.utr}</span>
+                                <span className="text-right">₹{p.amount}</span>
+                                <span className={`w-20 text-right ${p.used ? "text-gray-400": "text-green-600"}`}>
                                     {p.used ? "Used" : "Available"}
                                 </span>
                             </div>
