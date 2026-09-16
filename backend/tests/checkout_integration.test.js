@@ -96,7 +96,7 @@ describe("Checkout flow (QR generation + 12-digits UTR verification",()=> {
             Transaction.findById.mockResolvedValue(txn);
             ValidPayment.findOne.mockResolvedValue(null);
 
-            const token = buildAccessToken("user-1");
+            const token = buildAccessToken("user-1")
 
             const res = await request(app)
                 .post("/api/checkout/order-4/verify")
@@ -107,4 +107,77 @@ describe("Checkout flow (QR generation + 12-digits UTR verification",()=> {
             expect(res.body.verified).toBe(false);
             expect(txn.status).toBe("Pending");
         })
+})
+
+describe("Checkout-already-used UTR gets a distinct message", ()=>{
+    beforeEach(()=>{
+        jest.clearAllMocks();
+    });
+
+    const buildAccessToken= (id, role ="user") =>
+        jwt.sign({ id, email:"buyer@test.com", role}, process.env.SECRET, {
+            expiresIn: "15m"
+        });
+
+    test("a UTR thats exists but is already used returns alreadyUsed:true with its own message", async () => {
+        const txn = {
+            _id: "order-used",
+            amount: 500,
+            status: "Pending",
+            userId: "user-1",
+            utr: null,
+            save: jest.fn().mockResolvedValue(true)
+        };
+
+        const usedRecord = {
+            utr: "968574859685",
+            amount: 500,
+            used: true
+        };
+
+        Transaction.findById.mockResolvedValue(txn);
+        ValidPayment.findOne.mockResolvedValue(usedRecord);
+
+        const token = buildAccessToken("user-1");
+
+        const res = await request(app)
+            .post("/api/checkout/order-used/verify")
+            .set("Authorization", `Bearer ${token}`)
+            .send({utr: "968574859685"});
+
+        expect(res.statusCode).toBe(200);
+        expect(res.body.verified).toBe(false);
+        expect(res.body.alreadyUsed).toBe(true);
+        expect(y=txn.status).toBe("Pending");
+    });
+    test("admin (no leading/trailing space bug) can verify another user's order", async () => {
+        const txn = {
+            _id: "order-admin-check",
+            amount: 500,
+            status: "Pending",
+            utr: null,
+            userId : "some-other-user",
+            save: jest.fn().mockResolvedValue(true)
+        };
+
+        const matchingPayment = {
+            utr: "9685748596850",
+            amount: 500,
+            used: false,
+            save: jest.fn().mockResolvedValue(true)
+        };
+
+        Transaction.findById.mockResolvedValue(txn);
+        ValidPayment.findOne.mockResolvedValue(matchingPayment);
+
+        const adminToken = buildAccessToken("admin-1","admin");
+
+        const res = await request(app)
+            .post("/api/checkout/order-admin-check/verify")
+            .set("Authorization", `Bearer ${adminToken}`)
+            .send({utr: "968574859685"});
+
+        expect(res.statusCode).toBe(200);
+        expect(res.body.verified).toBe(true);
+    })
 })
