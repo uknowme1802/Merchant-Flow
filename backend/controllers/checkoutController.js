@@ -4,6 +4,7 @@ const Transaction = require("../models/Transaction");
 const ValidPayment = require("../models/ValidPayment");
 const redis = require("../config/redis");
 const { getIO } = require("../socket");
+const { triggerWebhooks } = require("../utils/webhookDispatcher");
 
 const UTR_REGEX = /^\d{12}$/;
 
@@ -40,6 +41,12 @@ exports.createCheckout = async (req, res, next) => {
         const upiLink = `upi://pay?pa=${encodeURIComponent(UPI_ID)}&pn=${encodeURIComponent(UPI_NAME)}&am=${numericAmount}&cu=INR&tn=${encodeURIComponent(txnId)}`;
 
         const qrCode= await qrcode.toDataURL(upiLink);
+
+        triggerWebhooks("checkout.created", {
+            orderId: txn._id,
+            amount: txn.amount,
+            status: txn.status
+        });
 
         res.status(201).json({
             success: true,
@@ -174,6 +181,13 @@ exports.verifyPayment = async (req, res, next) => {
         } catch (socketErr){
             console.warn("❗Warning: Could not emit newTransaction event:", socketErr.message)
         }
+
+        triggerWebhooks("payment.success", {
+            orderId: txn._id,
+            amount: txn.amount,
+            utr: txn.utr,
+            status: txn.status
+        });
 
         res.json({
             success: true,
