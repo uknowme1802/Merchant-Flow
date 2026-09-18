@@ -37,7 +37,7 @@ app.use("/api/2fa", twoFactorRoutes);
 app.use("/api/checkout", checkoutRoutes);
 app.use("/api/valid-payments", ValidPaymentRoutes);
 app.use("/health", healthRoutes);
-app.use("/api/Webhooks", WebhookRoutes);
+app.use("/api/webhooks", WebhookRoutes);
 
 app.get("/", (req,res)=>{
     res.send("API Running...");
