@@ -6,6 +6,7 @@ const jwt = require("jsonwebtoken");
 const Webhook = require("../models/Webhook");
 const WebhookDelivery = require("../models/WebhookDelivery");
 const app = require("../app");
+const { build } = require("joi");
 
 describe("Webhook management (admin-only)", () => {
     beforeEach(()=>{
@@ -20,7 +21,7 @@ describe("Webhook management (admin-only)", () => {
         });
     
     test("admin can create a webhook with and explicit secret", async() => {
-        Webhook.create.mockResolvedValues({
+        Webhook.create.mockResolvedValue({
             _id: "wh-1",
             url: "https://example.com/hook",
             events: ["payment.success"],
@@ -43,7 +44,7 @@ describe("Webhook management (admin-only)", () => {
     });
 
     test("auto-generates a secret when none is provided", async() =>{
-        Webhook.create.mockResolvedValues({
+        Webhook.create.mockResolvedValue({
             _id: "wh-2",
             url: "https://example.com/hook",
             events: Webhook.EVENTS,
@@ -101,11 +102,11 @@ describe("Webhook management (admin-only)", () => {
 
     test("admin can list webooks", async ()=>{
         Webhook.find.mockReturnValue({
-            sort: jest.fn().mockResolvedValues([{ _id: "wh-1", url: "https://example.com/hook"}])
+            sort: jest.fn().mockResolvedValue([{ _id: "wh-1", url: "https://example.com/hook"}])
         });
 
         const adminToken = buildAccessToken("admin-1", "admin");
-
+        
         const res = await request(app)
                     .get("/api/webhooks")
                     .set("Authorization", `Bearer ${adminToken}`);
@@ -115,6 +116,60 @@ describe("Webhook management (admin-only)", () => {
     });
 
     test("admin can toggle a webhook active/inactive", async () => {
+        Webhook.findByIdAndUpdate.mockResolvedValue({_id: "wh-1", active: false });
 
-    })_
-})
+        const adminToken = buildAccessToken("admin-1", "admin");
+
+        const res = await request(app)
+                    .patch("/api/webhooks/wh-1")
+                    .set("Authorization", `Bearer ${adminToken}`)
+                    .send({ active: false });
+
+        expect(res.statusCode).toBe(200);
+        expect(res.body.data.active).toBe(false);
+    });
+
+    test("toggling a non-existent webhook returns 404", async () =>{
+        Webhook.findByIdAndUpdate.mockResolvedValue(null);
+
+        const adminToken = buildAccessToken("admin-1","admin");
+
+        const res = await request(app)
+                    .patch("/api/webhooks/does-not-exist")
+                    .set("Authorization", `Bearer ${adminToken}`)
+                    .send({active: false});
+
+        expect(res.statusCode).toBe(404);
+    });
+
+    test("admin can delete a webhook", async() => {
+        Webhook.findByIdAndDelete.mockResolvedValue({ _id: "wh-1" });
+
+        const adminToken = buildAccessToken("admin-1", "admin" );
+
+        const res = await request(app)
+                    .delete("/api/webhooks/wh-1")
+                    .set("Authorization", `Bearer ${adminToken}`);
+
+        expect(res.statusCode).toBe(200)
+    });
+
+    test("admin can view recent deliveries for a webhook", async () =>{
+        WebhookDelivery.find.mockReturnValue({
+            sort: jest.fn().mockReturnedValue({
+                limit: jest.fn().mockResolvedValue([
+                    { event: "payment.success", success: true, statusCode: 200 }
+                ])
+            })
+        });
+
+        const adminToken = buildAccessToken("admin-1", "admin")
+
+        const res = await request(app)
+            .get("/api/webhooks/wh-1/deliveries")
+            .set("Authorization", `Bearer ${adminToken}`);
+
+        expect(res.statusCode).toBe(200);
+        expect(res.body.data).toHaveLength(1)
+    });
+});
