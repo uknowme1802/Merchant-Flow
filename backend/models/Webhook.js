@@ -1,7 +1,7 @@
 const mongoose = require("mongoose");
 const crypto = require("crypto");
 
-const WEBHOOK_EVENTS = ["checkout.created", "payment.sucess"];
+const WEBHOOK_EVENTS = ["checkout.created", "payment.success"];
 
 const webhookSchema = new mongoose.Schema({
     url: {
@@ -29,4 +29,4 @@ webhookSchema.statics.EVENTS = WEBHOOK_EVENTS;
 
 webhookSchema.statics.generateSecret = () => crypto.randomBytes(24).toString("hex");
 
-module.exports = mongoose.mongoose.model("Webhook", webhookSchema);
+module.exports = mongoose.model("Webhook", webhookSchema);

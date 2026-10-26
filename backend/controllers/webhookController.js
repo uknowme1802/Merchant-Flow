@@ -3,7 +3,7 @@ const WebhookDelivery = require("../models/WebhookDelivery");
 
 exports.createWebhook = async ( req, res, next ) => {
     try {
-        const { utr, events, secret } = req.body;
+        const { url, events, secret } = req.body;
 
         if (!url || typeof url !== "string"){
             return res.status(400).json({
@@ -26,7 +26,7 @@ exports.createWebhook = async ( req, res, next ) => {
             if(!Array.isArray(events) || events.some((e)=> !Webhook.EVENTS.includes(e))){
                 return res.status(400).json({
                     success: false,
-                    message: `events must be a array containing only: ${Webhook.EVENTS.join("")}`
+                    message: `events must be a array containing only: ${Webhook.EVENTS.join(", ")}`
                 });
             }
 
@@ -46,7 +46,7 @@ exports.createWebhook = async ( req, res, next ) => {
                 url: webhook.url,
                 events: webhook.events,
                 active: webhook.active,
-                secret: webbhook.secret
+                secret: webhook.secret
             }
         })
     } catch(err){
@@ -63,7 +63,7 @@ exports.listWebhooks = async (req, res, next) => {
     }
 };
 
-exports.toggleWebhooks = async (req, res, next) => {
+exports.toggleWebhook = async (req, res, next) => {
     try {
         const {active} = req.body;
         if(typeof active !== "boolean"){
@@ -93,9 +93,9 @@ exports.toggleWebhooks = async (req, res, next) => {
 
 exports.deleteWebhook = async (req, res, next) => {
     try {
-        const webbhook = await Webhook.findByIdAndDelete(req.params.id);
+        const webhook = await Webhook.findByIdAndDelete(req.params.id);
 
-        if(!webbhook){
+        if(!webhook){
             return res.status(404).json({
                 success: false,
                 message: "Webhook not found"
@@ -111,7 +111,7 @@ exports.deleteWebhook = async (req, res, next) => {
     }
 };
 
-exports.listdeliveries = async (req, res, next) => {
+exports.listDeliveries = async (req, res, next) => {
 
     try {
         const deliveries = await WebhookDelivery.find({webhookId: req.params.id})

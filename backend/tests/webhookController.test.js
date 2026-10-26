@@ -6,12 +6,12 @@ const jwt = require("jsonwebtoken");
 const Webhook = require("../models/Webhook");
 const WebhookDelivery = require("../models/WebhookDelivery");
 const app = require("../app");
-const { build } = require("joi");
+// const { build } = require("joi");
 
 describe("Webhook management (admin-only)", () => {
     beforeEach(()=>{
         jest.clearAllMocks();
-        Webhook.EVENTS =["checkout.created", "payment.succeess"];
+        Webhook.EVENTS =["checkout.created", "payment.success"];
         Webhook.generateSecret = jest.fn().mockReturnValue("auto-generated-secret");
     });
 
@@ -34,12 +34,12 @@ describe("Webhook management (admin-only)", () => {
         const res = await request(app)
                     .post("/api/webhooks")
                     .set("Authorization", `Bearer ${adminToken}`)
-                    .send({ url: "https://example/com/hook", events: ["payment.success"], secret: "my-secret"})
+                    .send({ url: "https://example.com/hook", events: ["payment.success"], secret: "my-secret"})
 
         expect(res.statusCode).toBe(201);
         expect(res.body.data.secret).toBe("my-secret");
         expect(Webhook.create).toHaveBeenCalledWith(
-            expect.objectContaining({ url: "https://example.com/hook", event: ["payment.success"], secret: "my-secret "})
+            expect.objectContaining({ url: "https://example.com/hook", events: ["payment.success"], secret: "my-secret"})
         )
     });
 
@@ -76,10 +76,10 @@ describe("Webhook management (admin-only)", () => {
         expect(Webhook.create).not.toHaveBeenCalled();
     });
 
-    test("rejest an invalud event name" ,async () => {
+    test("reject an invalid event name", async () => {
         const adminToken = buildAccessToken("admin-1", "admin");
 
-        const res = request(app)
+        const res = await request(app)
             .post("/api/webhooks")
             .set("Authorization", `Bearer ${adminToken}`)
             .send({url: "https://example.com/hooks", events: ["not.a.real.event"]});
@@ -89,18 +89,18 @@ describe("Webhook management (admin-only)", () => {
         expect(Webhook.create).not.toHaveBeenCalled();
     });
 
-    test("a non-admin use cannot create a webook", async () => {
+    test("a non-admin user cannot create a webook", async () => {
         const userToken = buildAccessToken("user-1", "user");
 
         const res = await request(app)
                     .post("/api/webhooks")
                     .set("Authorization", `Bearer ${userToken}`)
                     .send({ url: "https://example.com/hooks" })
-        expect(res.statusCode).toBe(403)
-        expect(Webhook.create).toHaveBeenCalled();
+        expect(res.statusCode).toBe(403);
+        expect(Webhook.create).not.toHaveBeenCalled();
     });
 
-    test("admin can list webooks", async ()=>{
+    test("admin can list webhooks", async ()=>{
         Webhook.find.mockReturnValue({
             sort: jest.fn().mockResolvedValue([{ _id: "wh-1", url: "https://example.com/hook"}])
         });
@@ -156,7 +156,7 @@ describe("Webhook management (admin-only)", () => {
 
     test("admin can view recent deliveries for a webhook", async () =>{
         WebhookDelivery.find.mockReturnValue({
-            sort: jest.fn().mockReturnedValue({
+            sort: jest.fn().mockReturnValue({
                 limit: jest.fn().mockResolvedValue([
                     { event: "payment.success", success: true, statusCode: 200 }
                 ])
@@ -170,6 +170,6 @@ describe("Webhook management (admin-only)", () => {
             .set("Authorization", `Bearer ${adminToken}`);
 
         expect(res.statusCode).toBe(200);
-        expect(res.body.data).toHaveLength(1)
+        expect(res.body.data).toHaveLength(1);
     });
 });

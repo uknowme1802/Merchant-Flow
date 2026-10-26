@@ -192,7 +192,7 @@ describe("Checkout - Webhook triggers", () => {
         jwt.sign({ id, email: "buyer@test.com", role }, process.env.SECRET, { expiresIn: "15m" });
 
     test("createCheckout fires a checkout.created webhook event", async () => {
-        const { triggerWebhooks } =require("../utils/webhookDispatcher");
+        const { triggerWebhooks } = require("../utils/webhookDispatcher");
         const created = {
             _id: "order-webhook-1",
             id: "TXN-abc",
