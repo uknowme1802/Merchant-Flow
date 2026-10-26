@@ -7,15 +7,15 @@ const WebhookDelivery = require("../models/WebhookDelivery");
 const { triggerWebhooks, signPayload } = require("../utils/webhookDispatcher");
 
 describe("webhookDispatcher", () =>{
-    let OriginalFetch;
+    let originalFetch;
 
     beforeEach(()=>{
         jest.clearAllMocks();
-        OriginalFetch = global.fetch;
+        originalFetch = global.fetch;
     });
 
     afterEach(()=>{
-        global.fetch = OriginalFetch;
+        global.fetch = originalFetch;
     });
 
     test("signPayload produces a correct, verifiable, HMAC-SHA256 signature", ()=>{
@@ -29,7 +29,7 @@ describe("webhookDispatcher", () =>{
     });
 
     test("does nothing when there are no active webhooks for the event", async() => {
-        Webhook.find.mockReturnValue({ select: jest.fn().mockResolvedValues([])});
+        Webhook.find.mockReturnValue({ select: jest.fn().mockResolvedValue([])});
         global.fetch = jest.fn();
 
         await triggerWebhooks("payment.success", { amount: 500 });
@@ -40,15 +40,15 @@ describe("webhookDispatcher", () =>{
     
     test("delivers to an active matching webhook with a correct signature header", async() =>{
         const webhook = { _id: "wh-1", url:"https://example.com/hook", secret: "shh"};
-        Webhook.find.mockReturnValue({ select: jest.fn().mockResolvedValues([webhook])
+        Webhook.find.mockReturnValue({ select: jest.fn().mockResolvedValue([webhook])
         })
-        global.fetch = jest.fn().mockResolvedValues({ ok: true, status: 200 });
+        global.fetch = jest.fn().mockResolvedValue({ ok: true, status: 200 });
 
         await triggerWebhooks("payment.success", { amount: 500 });
 
         expect(global.fetch).toHaveBeenCalledTimes(1);
         const [url, options] = global.fetch.mock.calls[0];
-        expect(url).toBe("https://exxample.com/hook");
+        expect(url).toBe("https://example.com/hook");
         expect(options.method).toBe("POST");
         expect(options.headers["X-Webhook-Event"]).toBe("payment.success");
 
@@ -62,28 +62,28 @@ describe("webhookDispatcher", () =>{
     })
 
     test("records a failed delivery (non-2xx) without throwing", async() =>{ 
-        const webhook = { _id: "wh-2", url: "htpps://example.com/hook", secret: "shh" };
-        Webhook.find.mockReturnValue({ select: jest.fn().mockResolvedValues([webhook]) });
+        const webhook = { _id: "wh-2", url: "https://example.com/hook", secret: "shh" };
+        Webhook.find.mockReturnValue({ select: jest.fn().mockResolvedValue([webhook]) });
 
-        global.fetch = jest.fn().mockResolvedValues({ok: false, status: 500 });
+        global.fetch = jest.fn().mockResolvedValue({ok: false, status: 500 });
 
         await expect(triggerWebhooks("payment.success", {amount: 500})).resolves.not.toThrow();
 
         expect(WebhookDelivery.create).toHaveBeenCalledWith(
-            expect.objectContaining({webhookId: "wh-2", status:false, statusCode: 500 })
+            expect.objectContaining({webhookId: "wh-2", success: false, statusCode: 500 })
         )
     })
 
     test("records a network failure (fetch throws) without throwing", async()=> {
-        const webhook = { _id: "wh-3", url: " htpps://unreachable.example.com", secret: "shh"};
-        Webhook.find.mockReturnValue({ select: jest.fn().mockResolvedValues([webhook])});
+        const webhook = { _id: "wh-3", url: "https://unreachable.example.com", secret: "shh"};
+        Webhook.find.mockReturnValue({ select: jest.fn().mockResolvedValue([webhook])});
 
         global.fetch = jest.fn().mockRejectedValue(new Error("ECONNREFUSED"));
 
         await expect(triggerWebhooks("payment.success", { amount: 500 })).resolves.not.toThrow();
 
         expect(WebhookDelivery.create).toHaveBeenCalledWith(
-            expect.objectContaining({ webhookId: "wh-3", status: false, statusCode: null, error: "ECONNREFUSED"})
+            expect.objectContaining({ webhookId: "wh-3", success: false, statusCode: null, error: "ECONNREFUSED"})
         )
     })
 
@@ -92,8 +92,8 @@ describe("webhookDispatcher", () =>{
             {_id: "wh-a", url: "https://a.example.com", secret: "s1" },
             {_id: "wh-b", url: "https://b.example.com", secret: "s2" }
         ];
-        Webhook.find.mockReturnValue({select: jest.fn().mockResolvedValues(webhooks)});
-        global.fetch = jest.fn().mockResolvedValues({ok: true, status: 200})
+        Webhook.find.mockReturnValue({select: jest.fn().mockResolvedValue(webhooks)});
+        global.fetch = jest.fn().mockResolvedValue({ok: true, status: 200})
 
         await triggerWebhooks("checkout.created", {amount:500});
 

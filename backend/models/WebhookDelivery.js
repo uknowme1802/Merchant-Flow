@@ -27,4 +27,6 @@ const webhookDeliverySchema = new mongoose.Schema({
     }
 }, {timestamps: true });
 
-webhookDeliverySchema.index({webhookId:1, createdAt:-1})
+webhookDeliverySchema.index({webhookId:1, createdAt:-1});
+
+module.exports = mongoose.model("WebhookDelivery", webhookDeliverySchema);
