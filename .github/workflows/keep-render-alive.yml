@@ -4,7 +4,6 @@ on:
   schedule:
     #Run every 5 minutes
     - cron: "*/5 * * * *"
-
   # Allow manual execution from Github Actions
   workflow_dispatch:
 
@@ -16,13 +15,14 @@ jobs:
       - name: Ping Render Health endpoint
         run: |
           echo "Pinging MerchantFlow backend..."
-          response=$(curl -s -o /dev/null -w "%{https_code}" \
+          response=$(curl -s -o /dev/null -w "%{http_code}" \
             --max-time 30\
-            https://merchant-flow-seuw.onrender.com/health)
+            --retry-delay 5\
+            https://merchant-flow-seuw.onrender.com/health) || response="000"
 
-          echo "HHTP status: $response"
+          echo "HTTP status: $response"
 
-          if [ "$response" -lt 200 ] || [ "$response" -g 300]; then
+          if [ "$response" -lt 200 ] || [ "$response" -ge 300 ]; then
             echo "Backend health check failed."
             exit 1
           fi 
