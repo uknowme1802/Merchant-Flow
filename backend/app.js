@@ -14,6 +14,7 @@ const healthRoutes = require("./routes/healthRoutes");
 const twoFactorRoutes  = require("./routes/twoFactorRoutes");
 const checkoutRoutes = require("./routes/checkoutRoutes");
 const ValidPaymentRoutes = require("./routes/validPaymentRoutes");
+const WebhookRoutes = require("./routes/webhookRoutes");
 
 const app = express();
 
@@ -36,6 +37,7 @@ app.use("/api/2fa", twoFactorRoutes);
 app.use("/api/checkout", checkoutRoutes);
 app.use("/api/valid-payments", ValidPaymentRoutes);
 app.use("/health", healthRoutes);
+app.use("/api/Webhooks", WebhookRoutes);
 
 app.get("/", (req,res)=>{
     res.send("API Running...");

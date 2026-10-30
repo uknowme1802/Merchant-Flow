@@ -1,5 +1,6 @@
 jest.mock("../models/Transaction.js");
 jest.mock("../models/ValidPayment.js");
+jest.mock("../utils/webhookDispatcher.js");
 
 const request = require("supertest");
 const jwt = require("jsonwebtoken");
@@ -179,5 +180,97 @@ describe("Checkout-already-used UTR gets a distinct message", ()=>{
 
         expect(res.statusCode).toBe(200);
         expect(res.body.verified).toBe(true);
+    })
+})
+
+describe("Checkout - Webhook triggers", () => {
+    beforeEach(()=>{
+        jest.clearAllMocks();
+    });
+
+    const buildAccessToken =(id, role = "user") =>
+        jwt.sign({ id, email: "buyer@test.com", role }, process.env.SECRET, { expiresIn: "15m" });
+
+    test("createCheckout fires a checkout.created webhook event", async () => {
+        const { triggerWebhooks } = require("../utils/webhookDispatcher");
+        const created = {
+            _id: "order-webhook-1",
+            id: "TXN-abc",
+            amount: 500,
+            status: "Pending",
+            utr: null,
+            userId: "user-1"
+        };
+        Transaction.create.mockResolvedValue(created);
+
+        const token = buildAccessToken("user-1");
+
+        await request(app)
+            .post("/api/checkout")
+            .set("Authorization", `Bearer ${token}`)
+            .send({amount: 500});
+
+        expect(triggerWebhooks).toHaveBeenCalledWith(
+            "checkout.created",
+            expect.objectContaining({ orderId: "order-webhook-1", amount: 500, status: "Pending" })
+        );
+    });
+
+    test("veriifyPayment fires a payment.success webhook event only on success", async() => {
+        const { triggerWebhooks } = require("../utils/webhookDispatcher");
+        const txn = {
+            _id: "order-webhook-2",
+            amount: 500,
+            status: "Pending",
+            userId: "user-1",
+            utr: null,
+            save: jest.fn().mockResolvedValue(true)
+        };
+        const matchingPayment = {
+            utr: "968574859685",
+            amount: 500,
+            used: false,
+            save: jest.fn().mockResolvedValue(true)
+        };
+
+        Transaction.findById.mockResolvedValue(txn);
+        ValidPayment.findOne.mockResolvedValue(matchingPayment);
+
+        const token = buildAccessToken("user-1");
+
+        await request(app)
+            .post("/api/checkout/order-webhook-2/verify")
+            .set("Authorization", `Bearer ${token}`)
+            .send({ utr: "968574859685"});
+
+        expect(triggerWebhooks).toHaveBeenCalledWith(
+            "payment.success",
+            expect.objectContaining({ orderId: "order-webhook-2", amount: 500, utr: "968574859685"})
+        )
+    });
+
+    test("a pending (non-matching) verification does NOT fire payment.success", async() =>{
+        const { triggerWebhooks } = require("../utils/webhookDispatcher");
+        const txn = {
+            _id: "order-webhook-3",
+            amount: 500,
+            status: "Pending",
+            userId: "user-1",
+            utr: null,
+            save: jest.fn().mockResolvedValue(true)
+        };
+
+        Transaction.findById.mockResolvedValue(txn);
+        ValidPayment.findOne.mockResolvedValue(null);
+
+
+        const token = buildAccessToken("user-1");
+
+        await request(app)
+            .post("/api/checkout/order-webhook-3/verify")
+            .set("Authorization", `Bearer ${token}`)
+            .send({ utr: "000000000000"});
+
+        expect(triggerWebhooks).not.toHaveBeenCalledWith("payment.success", expect.anything());
     })
 })
