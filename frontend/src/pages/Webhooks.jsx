@@ -268,7 +268,7 @@ export default function Webhooks () {
                                                             <span className="block text-gray-400">
                                                                {new Date(d.createdAt).toLocaleString()}
                                                             </span>
-                                                            {!id.success && d.error && (
+                                                            {!d.success && d.error && (
                                                                 <span className="block text-red-500 break-words">{d.error}</span>
                                                             )}
                                                         </div>
