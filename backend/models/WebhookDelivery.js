@@ -10,6 +10,11 @@ const webhookDeliverySchema = new mongoose.Schema({
         type: String,
         required: true
     },
+    // The human-facing order ID (TXN-...), kept on its own field so logs can be searched by it
+    transactionId: {
+        type: String,
+        default: null
+    },
     payload:{
         type: mongoose.Schema.Types.Mixed
     },
@@ -28,5 +33,7 @@ const webhookDeliverySchema = new mongoose.Schema({
 }, {timestamps: true });
 
 webhookDeliverySchema.index({webhookId:1, createdAt:-1});
+webhookDeliverySchema.index({transactionId:1, createdAt:-1});
+webhookDeliverySchema.index({createdAt:-1});
 
 module.exports = mongoose.model("WebhookDelivery", webhookDeliverySchema);

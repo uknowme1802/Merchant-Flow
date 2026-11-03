@@ -52,7 +52,7 @@ export default function Sidebar(){
                 )}
 
                 {user?.role === "admin" && (
-                    <NavLink to="/webhooks" className={({isActive}) => `flex items-center gap-3 p-2 rounded=lg ${isActive ? "bg-indigo-100 text-inidigo-600": "text-gray-600"}`}>
+                    <NavLink to="/webhooks" className={({isActive}) => `flex items-center gap-3 p-2 rounded-lg ${isActive ? "bg-indigo-100 text-indigo-600": "text-gray-600"}`}>
                         <Webhook size={18} /> Webhooks
                     </NavLink>
                 )}
