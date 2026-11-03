@@ -1,7 +1,8 @@
-import { LayoutDashboard, CreditCard, BarChart3, Shield, ShieldCheck, ShoppingCart, KeyRound } from "lucide-react"
+import { LayoutDashboard, CreditCard, BarChart3, Shield, ShieldCheck, ShoppingCart, KeyRound, Webhook } from "lucide-react"
 import { useContext } from "react"
 import { NavLink } from "react-router-dom"
 import { AuthContext } from "../context/AuthContext"
+
 
 
 export default function Sidebar(){
@@ -47,6 +48,12 @@ export default function Sidebar(){
                 { user?.role === "admin" && (
                     <NavLink to="/payment-code" className={({isActive})=> `flex items-center gap-3 p-2 rounded-lg ${isActive ? "bg-indigo-100 text-indigo-600": "text-gray-600"}`}>
                         <KeyRound size={18} /> Payment Codes
+                    </NavLink>
+                )}
+
+                {user?.role === "admin" && (
+                    <NavLink to="/webhooks" className={({isActive}) => `flex items-center gap-3 p-2 rounded=lg ${isActive ? "bg-indigo-100 text-inidigo-600": "text-gray-600"}`}>
+                        <Webhook size={18} /> Webhooks
                     </NavLink>
                 )}
             </nav>
