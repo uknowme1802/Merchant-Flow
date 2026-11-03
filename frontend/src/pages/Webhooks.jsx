@@ -3,7 +3,8 @@ import API from "../services/api"
 import Button from "../components/ui/Button";
 import toast from "react-hot-toast";
 import { AuthContext } from "../context/AuthContext";
-import { Copy, Trash2 } from "lucide-react";
+import { Copy, Trash2, Wand2 } from "lucide-react";
+import WebhookLogs from "../components/WebhookLogs";
 
 const EVENT_OPTIONS = ["checkout.created", "payment.success"];
 const MIN_SECRET_LENGTH =16;
@@ -15,6 +16,12 @@ const isValidWebhookUrl = (value) => {
     } catch {
         return false;
     }
+};
+
+const generateSecret = () => {
+    const bytes = new Uint8Array(24);
+    crypto.getRandomValues(bytes);
+    return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
 };
 
 const notifyError = (error, fallback) => {
@@ -33,6 +40,7 @@ export default function Webhooks () {
     const [selectedEvents, setSelectedEvents] = useState(EVENT_OPTIONS);
     const [secret, setSecret] = useState("");
     const [creating, setCreating] = useState(false);
+    const [tab, setTab] = useState("endpoints"); // "endpoints" | "logs"
 
     const [newSecret, setNewSecret] = useState(null); //shown only once upon creation
     const [expandedId, setExpandedId] = useState(null);
@@ -88,7 +96,7 @@ export default function Webhooks () {
             return;
         }
         if(trimmedSecret && trimmedSecret.length < MIN_SECRET_LENGTH){
-            toast.error(`Secret must be at least ${MIN_SECRET_LENGTH} characters (or leave it empty to auto generated one)`);
+            toast.error(`Secret must be at least ${MIN_SECRET_LENGTH} characters (or leave it empty to an auto-generated one)`);
             return;
         }
         
@@ -97,7 +105,7 @@ export default function Webhooks () {
             const body = { url: trimmedUrl, events: selectedEvents };
             if(trimmedSecret) body.secret =trimmedSecret;
 
-            const res = await API.post("/webhooks, body");
+            const res = await API.post("/webhooks", body);
 
             setNewSecret({url: res.data.data.url, secret: res.data.data.secret});
             setUrl("");
@@ -168,8 +176,24 @@ export default function Webhooks () {
     }
 
     return (
-        <div className="max-w-2xl">
+        <div className="max-w-4xl">
             <h1 className="text-xl font-bold mb-4">Webhooks</h1>
+
+            <div className="flex gap-6 border-b mb-6 text-sm">
+                {[["endpoints", "Endpoints"], ["logs", "Delivery logs"]].map(([key, label]) => (
+                    <button
+                        key={key}
+                        onClick={() => setTab(key)}
+                        className={`pb-2 -mb-px border-b-2 ${tab === key ? "border-indigo-600 text-indigo-600 font-medium" : "border-transparent text-gray-500 hover:text-gray-700"}`}
+                    >
+                        {label}
+                    </button>
+                ))}
+            </div>
+
+            {tab === "logs" && <WebhookLogs />}
+
+            {tab === "endpoints" && (<>
 
             {newSecret && (
                 <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 mb-6">
@@ -178,16 +202,16 @@ export default function Webhooks () {
                 </p>
                 <p className="text-xs text-amber-700 mt-1 mb-3">
                     It won&apos;t be shown again. Your receiver uses it to verify the {" "}
-                    <span className="font-mono">X-Webhook Signature</span> header on {" "}
-                    <span className="font-mono break all">{newSecret.url}</span>
+                    <span className="font-mono">X-Webhook-Signature</span> header on {" "}
+                    <span className="font-mono break-all">{newSecret.url}</span>
                 </p>
                 <div className="flex gap-2">
-                    <input readOnly value= {newSecret.secret} onFocus={(e)=> e.target.select()} arial-label="Signing secret" className="flex-1 p-2 border rounded font-mono text-xs bg-white" />
+                    <input readOnly value= {newSecret.secret} onFocus={(e)=> e.target.select()} aria-label="Signing secret" className="flex-1 p-2 border rounded font-mono text-xs bg-white" />
                     <button onClick={copySecret} className="px-3 py-2 border rounded bg-white hover:bg-gray-50 flex items-center gap-1 text-sm">
                         <Copy size={14} /> Copy
                     </button>
                 </div>
-                <button onClick ={()=> setNewSecret(null)} className="text-xs text-amber-700 hover:underline mt-3">I&apos;ve saed it -dismiss</button>
+                <button onClick ={()=> setNewSecret(null)} className="text-xs text-amber-700 hover:underline mt-3">I&apos;ve saved it - dismiss</button>
                 </div>
             )}
 
@@ -205,7 +229,12 @@ export default function Webhooks () {
                         ))}
                     </div>
 
-                    <input className="w-full p-2 border rounded font-mono text-sm" placeholder="Signing secret (optional-auto generated)" autoComplete="off" value={secret} onChange={(e)=>setSecret(e.target.value)} />
+                    <div className="flex gap-2">
+                        <input className="flex-1 p-2 border rounded font-mono text-sm" placeholder="Signing secret (optional - auto generated if empty)" autoComplete="off" value={secret} onChange={(e)=>setSecret(e.target.value)} />
+                        <button type="button" onClick={()=>setSecret(generateSecret())} className="px-3 py-2 border rounded bg-white hover:bg-gray-50 flex items-center gap-1 text-sm shrink-0">
+                            <Wand2 size={14} /> Generate
+                        </button>
+                    </div>
 
                 <Button onClick={createWebhook} disabled={creating} className="w-full bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded"> {creating? "Adding...":"Add Webhook"}
 
@@ -253,7 +282,7 @@ export default function Webhooks () {
                                     { expandedId===w._id && (
                                         <div className="mt-3 border-t pt-3">
                                             <div className="flex items-center justify-between mb-2">
-                                                <p className="text-xs text-gray-500">Last 25 delivery attemps</p>
+                                                <p className="text-xs text-gray-500">Last 25 delivery attempts</p>
                                                 <button onClick={()=>loadDeliveries(w._id)} className="text-xs text-indigo-600 hover:underline">
                                                     Refresh
                                                 </button>
@@ -262,7 +291,7 @@ export default function Webhooks () {
                                             {list === undefined ? ( <p className="text-xs text-gray-500">Loading...</p>): list === null ? ( <p className="text-xs text-red-500">Couldn&apos;t load deliveries.</p>) : list.length === 0 ? ( <p className="text-xs text-gray-500">No deliveries yet</p>)
                                             : (
                                                 <div>
-                                                    {list.map((d)=>( <div key={d._id} className="grid grid-cols-[1fr_auto_auto] gap-3 items-start text-xs border-b-py-2">
+                                                    {list.map((d)=>( <div key={d._id} className="grid grid-cols-[1fr_auto_auto] gap-3 items-start text-xs border-b py-2">
                                                         <div className="min-w-0">
                                                             <span className="font-mono">{d.event}</span>
                                                             <span className="block text-gray-400">
@@ -289,6 +318,7 @@ export default function Webhooks () {
                         }) }
                     </div> ) }
             </div>
+            </>)}
         </div>
     )
 }

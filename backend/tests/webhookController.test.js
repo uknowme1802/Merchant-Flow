@@ -172,4 +172,91 @@ describe("Webhook management (admin-only)", () => {
         expect(res.statusCode).toBe(200);
         expect(res.body.data).toHaveLength(1);
     });
+
+    describe("GET /api/webhooks/deliveries (global log + search)", () => {
+        const mockDeliveryQuery = (rows) => {
+            const chain = {
+                sort: jest.fn().mockReturnThis(),
+                skip: jest.fn().mockReturnThis(),
+                limit: jest.fn().mockReturnThis(),
+                populate: jest.fn().mockReturnThis(),
+                lean: jest.fn().mockResolvedValue(rows)
+            };
+            WebhookDelivery.find.mockReturnValue(chain);
+            return chain;
+        };
+
+        test("admin gets every delivery with its endpoint URL and timestamp", async () => {
+            const chain = mockDeliveryQuery([
+                { _id: "d1", event: "payment.success", transactionId: "TXN-1", success: true, statusCode: 200,
+                  createdAt: "2026-11-03T10:00:00.000Z", webhookId: { _id: "wh-1", url: "https://a.example/hook" } },
+                { _id: "d2", event: "payment.success", transactionId: "TXN-2", success: false, statusCode: null,
+                  createdAt: "2026-11-03T09:00:00.000Z", webhookId: null }
+            ]);
+            WebhookDelivery.countDocuments.mockResolvedValue(2);
+
+            const res = await request(app)
+                .get("/api/webhooks/deliveries")
+                .set("Authorization", `Bearer ${buildAccessToken("admin-1", "admin")}`);
+
+            expect(res.statusCode).toBe(200);
+            expect(res.body.total).toBe(2);
+            expect(res.body.data[0].webhook).toEqual({ _id: "wh-1", url: "https://a.example/hook" });
+            expect(res.body.data[0].webhookId).toBeUndefined();
+            expect(res.body.data[1].webhook).toBeNull(); // webhook was deleted, log is kept
+            expect(WebhookDelivery.find).toHaveBeenCalledWith({});
+            expect(chain.sort).toHaveBeenCalledWith({ createdAt: -1 });
+        });
+
+        test("searching by transaction ID filters deliveries to that order", async () => {
+            mockDeliveryQuery([]);
+            WebhookDelivery.countDocuments.mockResolvedValue(0);
+
+            const res = await request(app)
+                .get("/api/webhooks/deliveries")
+                .query({ transactionId: "  TXN-abc  " })
+                .set("Authorization", `Bearer ${buildAccessToken("admin-1", "admin")}`);
+
+            expect(res.statusCode).toBe(200);
+            expect(WebhookDelivery.find).toHaveBeenCalledWith({
+                transactionId: { $regex: "TXN-abc", $options: "i" }
+            });
+        });
+
+        test("regex characters in the search are escaped, not executed", async () => {
+            mockDeliveryQuery([]);
+            WebhookDelivery.countDocuments.mockResolvedValue(0);
+
+            await request(app)
+                .get("/api/webhooks/deliveries")
+                .query({ transactionId: "TXN-.*(" })
+                .set("Authorization", `Bearer ${buildAccessToken("admin-1", "admin")}`);
+
+            const filter = WebhookDelivery.find.mock.calls[0][0];
+            expect(new RegExp(filter.transactionId.$regex).test("TXN-.*(")).toBe(true);
+            expect(new RegExp(filter.transactionId.$regex).test("TXN-anything")).toBe(false);
+        });
+
+        test("pagination is clamped to sane limits", async () => {
+            const chain = mockDeliveryQuery([]);
+            WebhookDelivery.countDocuments.mockResolvedValue(0);
+
+            await request(app)
+                .get("/api/webhooks/deliveries")
+                .query({ page: 3, limit: 9999 })
+                .set("Authorization", `Bearer ${buildAccessToken("admin-1", "admin")}`);
+
+            expect(chain.limit).toHaveBeenCalledWith(100);
+            expect(chain.skip).toHaveBeenCalledWith(200);
+        });
+
+        test("non-admin users cannot read the delivery log", async () => {
+            const res = await request(app)
+                .get("/api/webhooks/deliveries")
+                .set("Authorization", `Bearer ${buildAccessToken("user-1", "user")}`);
+
+            expect(res.statusCode).toBe(403);
+            expect(WebhookDelivery.find).not.toHaveBeenCalled();
+        });
+    });
 });

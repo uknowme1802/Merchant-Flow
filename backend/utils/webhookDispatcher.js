@@ -46,6 +46,7 @@
             await WebhookDelivery.create({
                 webhookId: webhook._id,
                 event,
+                transactionId: payload?.transactionId ?? null,
                 payload,
                 statusCode,
                 success,
