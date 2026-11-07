@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import API from "../services/api";
 import Button from "../components/ui/Button";
 import toast from "react-hot-toast";
@@ -14,6 +14,9 @@ export default function Checkout() {
     const [utr, setUtr] = useState("");
     const [verifying, setVerifying] = useState(false);
     const [pendingMessage, setPendingMessage] = useState("");
+
+    // One Idempotency-Key per checkout attempt: a double click or network retry returns the same order
+    const idempotency = useRef(null);
     
     const startCheckout = async () => {
         const numericAmount = Number(amount);
@@ -23,7 +26,12 @@ export default function Checkout() {
         }
 
         try{
-            const res = await API.post("/checkout", {amount: numericAmount});
+            if(!idempotency.current || idempotency.current.amount !== numericAmount){
+                idempotency.current = {amount: numericAmount, key: crypto.randomUUID()};
+            }
+            const res = await API.post("/checkout", {amount: numericAmount}, {
+                headers: {"Idempotency-Key": idempotency.current.key}
+            });
             setOrder(res.data.data);
             setQrCode(res.data.qrCode);
             setStep("pay");
@@ -65,6 +73,7 @@ export default function Checkout() {
     }
 
     const startOver = () => {
+        idempotency.current = null;
         setStep("amount");
         setAmount("");
         setOrder(null);

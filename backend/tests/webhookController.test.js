@@ -26,7 +26,7 @@ describe("Webhook management (admin-only)", () => {
             url: "https://example.com/hook",
             events: ["payment.success"],
             active: true,
-            secret: "my-secret"
+            secret: "my-long-test-secret-123"
         });
 
         const adminToken = buildAccessToken("admin-1", "admin")
@@ -34,12 +34,12 @@ describe("Webhook management (admin-only)", () => {
         const res = await request(app)
                     .post("/api/webhooks")
                     .set("Authorization", `Bearer ${adminToken}`)
-                    .send({ url: "https://example.com/hook", events: ["payment.success"], secret: "my-secret"})
+                    .send({ url: "https://example.com/hook", events: ["payment.success"], secret: "my-long-test-secret-123"})
 
         expect(res.statusCode).toBe(201);
-        expect(res.body.data.secret).toBe("my-secret");
+        expect(res.body.data.secret).toBe("my-long-test-secret-123");
         expect(Webhook.create).toHaveBeenCalledWith(
-            expect.objectContaining({ url: "https://example.com/hook", events: ["payment.success"], secret: "my-secret"})
+            expect.objectContaining({ url: "https://example.com/hook", events: ["payment.success"], secret: "my-long-test-secret-123"})
         )
     });
 

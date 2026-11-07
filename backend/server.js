@@ -7,6 +7,7 @@ const PORT = process.env.PORT;
 
 const http = require("http");
 const {initSocket} = require("./socket");
+const {startRetryWorker} = require("./utils/webhookDispatcher");
 
 
 connectDB();
@@ -15,10 +16,13 @@ const app = require("./app")
 const server = http.createServer(app);
 initSocket(server);
 
+const stopRetryWorker = startRetryWorker();
+
 server.listen(PORT, ()=>{console.log(`Server running at PORT: ${PORT}`)});
 
 const gracefulShutdown = (signal) => {
     console.log(`${signal} recevied! Shuting down the server`);
+    stopRetryWorker();
 
     server.close(()=>{
         console.log("HTTP server closed.");
