@@ -3,6 +3,8 @@ node_modules
 
 dist
 build
+resume
 
 .DS_Store
 .vscode
+webhook-logs-fix.patch

@@ -4,7 +4,7 @@ let io;
 const initSocket = (server) =>{
     io = new Server(server , {
         cors: {
-            origin: "https://merchant-flow-one.vercel.app",
+            origin: ["https://merchant-flow-one.vercel.app", "http://localhost:5173"],
             methods: ["GET", "POST"]
         }
     })

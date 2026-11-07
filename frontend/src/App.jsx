@@ -8,6 +8,8 @@ import Users from "./pages/Users";
 import Security from "./pages/Security";
 import Checkout from "./pages/Checkout";
 import AdminPaymentCode from "./pages/AdminPaymentCode";
+import Webhooks from "./pages/Webhooks";
+
 
 
 function ProtectedRoute({children}){
@@ -34,6 +36,7 @@ function App(){
           <Route path="/security" element={<Security />} />
           <Route path="/checkout" element={<Checkout />} />
           <Route path="/payment-code" element={<AdminPaymentCode />} />
+          <Route path="/webhooks" element={<Webhooks />} />
         </Route>
       </Routes>
     </BrowserRouter>

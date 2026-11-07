@@ -61,6 +61,18 @@ describe("webhookDispatcher", () =>{
         );
     })
 
+    test("stores the transaction ID on the delivery log so it can be searched", async() =>{
+        const webhook = { _id: "wh-1", url: "https://example.com/hook", secret: "shh" };
+        Webhook.find.mockReturnValue({ select: jest.fn().mockResolvedValue([webhook]) });
+        global.fetch = jest.fn().mockResolvedValue({ ok: true, status: 200 });
+
+        await triggerWebhooks("payment.success", { transactionId: "TXN-123", amount: 500 });
+
+        expect(WebhookDelivery.create).toHaveBeenCalledWith(
+            expect.objectContaining({ webhookId: "wh-1", transactionId: "TXN-123" })
+        );
+    });
+
     test("records a failed delivery (non-2xx) without throwing", async() =>{ 
         const webhook = { _id: "wh-2", url: "https://example.com/hook", secret: "shh" };
         Webhook.find.mockReturnValue({ select: jest.fn().mockResolvedValue([webhook]) });

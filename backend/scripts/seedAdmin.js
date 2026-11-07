@@ -4,10 +4,15 @@ const mongoose = require("mongoose");
 const bcrypt = require("bcryptjs");
 const User= require("../models/User");
 
-const EMAIL = process.env.SEED_ADMIN_EMAIL || "Prime@merchantflow.com";
-const PASSWORD = process.env.SEED_ADMIN_PASSWORD || "AccessMasterControl@10"
+const EMAIL = process.env.SEED_ADMIN_EMAIL;
+const PASSWORD = process.env.SEED_ADMIN_PASSWORD;
 
 async function seed() {
+    if(!EMAIL || !PASSWORD){
+        console.error("SEED_ADMIN_EMAIL and SEED_ADMIN_PASSWORD must be set. Aborting!")
+        process.exit(1);
+    }
+
     if(!process.env.MONGO_URI){
         console.error("MONGO URI is not set. Aborting!")
         process.exit(1);
@@ -31,7 +36,7 @@ async function seed() {
         role: "admin"
     })
 
-    console.log(`✅Admin Access created with Email: ${EMAIL} and Password: ${PASSWORD}`);
+    console.log(`✅Admin Access created with Email: ${EMAIL}`);
     console.log("Delete this one after successful login.");
 
     await mongoose.disconnect()

@@ -127,4 +127,39 @@ exports.listDeliveries = async (req, res, next) => {
     }
 };
 
-                        
+const escapeRegex = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+// GET /api/webhooks/deliveries?transactionId=TXN-...&page=1&limit=20
+// Every delivery across all webhooks, newest first. transactionId is an optional
+// case-insensitive "contains" search.
+exports.listAllDeliveries = async (req, res, next) => {
+    try {
+        const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
+        const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 20, 1), 100);
+
+        const filter = {};
+        const search = typeof req.query.transactionId === "string" ? req.query.transactionId.trim() : "";
+        if(search){
+            filter.transactionId = { $regex: escapeRegex(search), $options: "i" };
+        }
+
+        const [deliveries, total] = await Promise.all([
+            WebhookDelivery.find(filter)
+                .sort({createdAt: -1})
+                .skip((page - 1) * limit)
+                .limit(limit)
+                .populate("webhookId", "url")
+                .lean(),
+            WebhookDelivery.countDocuments(filter)
+        ]);
+
+        const data = deliveries.map(({ webhookId, ...d }) => ({
+            ...d,
+            webhook: webhookId ? { _id: webhookId._id, url: webhookId.url } : null
+        }));
+
+        res.json({ success: true, page, limit, total, data });
+    } catch(err){
+        next(err);
+    }
+};

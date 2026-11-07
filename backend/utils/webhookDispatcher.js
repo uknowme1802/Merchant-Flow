@@ -1,6 +1,7 @@
     const crypto = require("crypto");
     const Webhook = require("../models/Webhook");
     const WebhookDelivery = require("../models/WebhookDelivery");
+const { webhookDeliveries } = require("./metrics");
 
     const TIMEOUT_MS = Number(process.env.WEBHOOK_TIMEOUT_MS) || 5000;
 
@@ -42,10 +43,13 @@
             clearTimeout(timeout);
         }
 
+        webhookDeliveries.inc({ event, outcome: success ? "success" : "failure" });
+
         try {
             await WebhookDelivery.create({
                 webhookId: webhook._id,
                 event,
+                transactionId: payload?.transactionId ?? null,
                 payload,
                 statusCode,
                 success,

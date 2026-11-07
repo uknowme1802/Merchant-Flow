@@ -1,6 +1,6 @@
 # 🚀 MerchantFlow Dashboard
 
-A **full-stack payment analytics platform** with JWT authentication, role-based access control, real-time transaction updates, Redis caching, automated testing, Docker containerization, and CI/CD.
+A **full-stack payment analytics platform** with JWT authentication, optional TOTP two-factor auth, role-based access control, UPI-style checkout with UTR verification, signed outbound webhooks with delivery logs, real-time transaction updates, Redis caching, automated testing, Docker containerization, and CI/CD.
 
 ---
 
@@ -23,6 +23,7 @@ A **full-stack payment analytics platform** with JWT authentication, role-based 
 - Role-based access control (**Admin / User**)
 - Protected API routes + frontend route guards
 - Persistent authentication state
+- **Two-factor authentication (TOTP)** - optional per user; QR-code setup (otplib + qrcode), enable/disable from the Security page, and a second verification step at login
 
 ---
 
@@ -57,6 +58,52 @@ All role restrictions are enforced on the backend — not just hidden in the UI.
 
 ---
 
+## 🛒 Checkout & Payment Verification
+
+- Any logged-in user can create a checkout order for an amount: a `Pending` transaction (`TXN-<uuid>`) is created and a **UPI QR code** is generated
+- The payer submits the 12-digit **UTR** to `POST /api/checkout/:id/verify`
+- The UTR + amount is matched against admin-registered **Valid Payment Codes**; a match marks the order `Success` and consumes the code (one-time use)
+- Unknown or already-used UTRs leave the order `Pending`
+- Non-admins can only view/verify their own orders
+- On success: the Redis transaction cache is cleared, a `newTransaction` Socket.IO event is emitted, and a `payment.success` webhook fires
+
+### Admin: Payment Codes
+
+Admins register valid `{ utr, amount }` pairs (a stand-in for a bank/PSP feed) under **Payment Codes** (`/payment-code`).
+
+---
+
+## 🔔 Webhooks (Admin)
+
+Admins can register endpoints to be notified about payment events.
+
+- **Events:** `checkout.created`, `payment.success` (also fired when an admin creates a `Success` transaction)
+- **Signed deliveries:** every request carries `X-Webhook-Signature` (HMAC-SHA256 of the raw body using the webhook secret) and `X-Webhook-Event`
+- Secrets are auto-generated (or supplied / generated in the UI), hidden from list responses, and returned on creation
+- Enable/disable or delete webhooks at any time
+- Configurable timeout (`WEBHOOK_TIMEOUT_MS`, default 5000 ms); dispatch is fire-and-forget and never breaks the originating request
+- **Delivery logs tab:** date/time, transaction ID, event, endpoint, HTTP status/error; searchable by transaction ID (case-insensitive, regex-escaped) with pagination
+- Every delivery is stored with its `transactionId`, payload, status code, success flag and error
+
+Payload shape:
+
+```json
+{
+  "event": "payment.success",
+  "data": { "transactionId": "TXN-...", "orderId": "...", "amount": 500, "utr": "123456789012", "status": "Success" },
+  "timestamp": "2026-01-01T00:00:00.000Z"
+}
+```
+
+Verifying a signature on the receiver:
+
+```javascript
+const expected = crypto.createHmac("sha256", secret).update(rawBody).digest("hex");
+const valid = crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(req.headers["x-webhook-signature"]));
+```
+
+---
+
 ## ⚡ Real-Time System
 
 - Socket.IO integration
@@ -74,13 +121,25 @@ All role restrictions are enforced on the backend — not just hidden in the UI.
 
 ---
 
+## 📈 Observability & API Docs
+
+- **Prometheus metrics** at `GET /metrics` (optionally protected with `METRICS_TOKEN`): HTTP latency histogram by route/method/status, webhook delivery outcomes, payment verification outcomes, plus Node process metrics
+- **Grafana dashboard** (auto-provisioned): request rate, p50/p95/p99 latency, 5xx ratio, payment and webhook outcomes, memory
+- **OpenAPI 3 docs** with Swagger UI at `/api-docs` (raw spec at `/api-docs.json`), written for merchants integrating with the API
+- **Helmet** security headers on every response
+
+---
+
 ## 🛡️ Security
 
 - JWT authentication with access + refresh tokens
 - Refresh token validation and revocation
 - bcrypt password hashing
 - Auth + role-based authorization middleware
-- Global rate limiting, with a tighter limiter on `/api/auth/login` and `/api/auth/refresh`
+- Helmet security headers
+- Optional TOTP two-factor authentication
+- HMAC-signed webhook payloads
+- Global rate limiting (100 req / 15 min), with a tighter limiter (10 req / 15 min) on auth endpoints
 - CORS configuration
 - Secrets kept in environment variables, never committed
 
@@ -112,9 +171,14 @@ MerchantFlow uses **Jest + Supertest** for backend API testing.
 
 ### Current Test Coverage
 
-- **Auth** — admin login, user login, invalid credentials
-- **Health** — health endpoint
-- **Readiness** — readiness endpoint
+- **Auth** - admin login, user login, invalid credentials
+- **Two-factor** - setup/enable/disable integration, legacy users without 2FA fields
+- **Checkout** - order creation, ownership checks, UTR verification flows
+- **Valid payments** - admin code creation/listing, access control
+- **Dashboard** - stats integration
+- **Webhooks** - controller (create/list/toggle/delete, delivery log search & pagination), dispatcher (signing, timeouts, delivery recording), transaction-triggered webhooks
+- **Observability** - `/metrics` output and token protection, OpenAPI document, security headers
+- **Health / Readiness** - health and readiness endpoints
 
 Run the suite:
 
@@ -126,8 +190,8 @@ npm test
 ### Current Test Status
 
 ```text
-Test Suites: 3 passed, 3 total
-Tests:       5 passed, 5 total
+Test Suites: 12 passed, 12 total
+Tests:       55 passed, 55 total
 ```
 
 ### Testing Stack
@@ -144,7 +208,7 @@ module.exports = app;
 
 This lets Supertest exercise the app directly without booting the real server.
 
-> **Not yet covered:** `transactionController`, `userController`, and middleware (`adminMiddleware`, `roleMiddleware`) have no tests yet — only auth/health/readiness are currently tested.
+> **Not yet covered:** `userController`, transaction listing/caching, and middleware (`adminMiddleware`, `roleMiddleware`) have no dedicated tests. There are no frontend tests.
 
 ---
 
@@ -160,7 +224,25 @@ docker build -t merchantflow-backend .
 docker run -p 5000:5000 --env-file .env merchantflow-backend
 ```
 
-## Docker Compose
+## Full Stack with Monitoring (Docker Compose)
+
+From the repo root, one command starts the API, MongoDB, Redis, Prometheus and Grafana:
+
+```bash
+docker compose -f docker-compose.monitoring.yml up -d --build
+```
+
+| Service | URL |
+|---------|-----|
+| API | http://localhost:5000 |
+| Swagger docs | http://localhost:5000/api-docs |
+| Metrics | http://localhost:5000/metrics |
+| Prometheus | http://localhost:9090 |
+| Grafana (admin / `GRAFANA_PASSWORD`, default `admin`) | http://localhost:3000, dashboard **MerchantFlow API** |
+
+Set `SECRET` and `REFRESH_SECRET` in your shell or a root `.env` before using this outside local development.
+
+## Backend-only Docker Compose
 
 ```bash
 cd backend
@@ -191,13 +273,16 @@ merchantflow-backend
 
 # 🔄 CI/CD
 
-GitHub Actions runs two separate pipelines on every push/PR to `Main`:
+GitHub Actions runs two pipelines on every push/PR to `Main`, plus a scheduled keep-alive job:
 
 ```text
 .github/workflows/
-├── backend-ci.yml   → install, test, Docker build
-└── frontend-ci.yml  → install, lint, build
+├── backend-ci.yml        → install, test, Docker build
+├── frontend-ci.yml       → install, lint, build
+└── keep-render-alive.yml → pings the Render /health endpoint every 5 minutes
 ```
+
+A `Jenkinsfile` at the repo root runs the same stages (backend tests, frontend lint/build, Docker image) on Jenkins.
 
 ## CI Flow
 
@@ -221,11 +306,11 @@ GitHub Actions
 
 ## Frontend
 
-React · Vite · Tailwind CSS · Redux Toolkit · React Router · Axios · Socket.IO Client · Recharts · PapaParse · react-hot-toast
+React 19 · Vite · Tailwind CSS · Redux Toolkit · React Router 7 · Axios · Recharts · PapaParse · lucide-react · react-hot-toast
 
 ## Backend
 
-Node.js · Express 5 · MongoDB (Mongoose) · Redis (ioredis) · JWT · bcrypt · Socket.IO · express-rate-limit
+Node.js · Express 5 · MongoDB (Mongoose) · Redis (ioredis) · JWT · bcryptjs · otplib (TOTP) · qrcode · Socket.IO · express-rate-limit · Joi · Winston · Morgan
 
 ## Testing
 
@@ -233,7 +318,7 @@ Jest · Supertest · cross-env
 
 ## DevOps
 
-Docker · Docker Compose · GitHub Actions
+Docker · Docker Compose · GitHub Actions · Jenkins · Prometheus · Grafana
 
 ## Deployment
 
@@ -286,65 +371,59 @@ Vercel (Frontend) · Render (Backend) · MongoDB Atlas · Redis (e.g. Upstash)
 ```text
 Merchant-Flow/
 │
-├── .github/
-│   └── workflows/
-│       ├── backend-ci.yml
-│       └── frontend-ci.yml
+├── .github/workflows/
+│   ├── backend-ci.yml
+│   ├── frontend-ci.yml
+│   └── keep-render-alive.yml
+│
+├── Jenkinsfile
+├── docker-compose.monitoring.yml (API + MongoDB + Redis + Prometheus + Grafana)
+├── monitoring/          (prometheus.yml, Grafana provisioning + dashboard)
 │
 ├── backend/
-│   ├── config/
-│   │   ├── db.js
-│   │   └── redis.js
-│   │
-│   ├── controllers/
-│   │   ├── authController.js
-│   │   ├── dashboardController.js
-│   │   ├── transactionController.js
-│   │   └── userController.js
-│   │
-│   ├── middleware/
-│   │   ├── authMiddleware.js
-│   │   ├── adminMiddleware.js
-│   │   ├── roleMiddleware.js
-│   │   ├── rateLimiter.js
-│   │   ├── authRateLimiter.js
-│   │   └── errorMiddleware.js
-│   │
-│   ├── models/
-│   │   ├── User.js
-│   │   └── Transaction.js
-│   │
-│   ├── routes/
-│   │   ├── authRoutes.js
-│   │   ├── dashboardRoutes.js
-│   │   ├── transactionRoutes.js
-│   │   ├── userRoutes.js
-│   │   └── healthRoutes.js
-│   │
-│   ├── tests/
-│   │   ├── auth.test.js
-│   │   ├── health.test.js
-│   │   ├── readiness.test.js
-│   │   └── setup.js
-│   │
-│   ├── app.js
-│   ├── server.js
+│   ├── config/            db.js, redis.js
+│   ├── controllers/       auth, twoFactor, checkout, dashboard, transaction,
+│   │                      user, validPayment, webhook
+│   ├── middleware/        auth, admin, role, rateLimiter, authRateLimiter, error
+│   ├── models/            User, Transaction, ValidPayment, Webhook, WebhookDelivery
+│   ├── routes/            auth, twoFactor, checkout, dashboard, transaction,
+│   │                      user, validPayment, webhook, health
+│   ├── docs/              openapi.yaml (served at /api-docs)
+│   ├── scripts/           seedAdmin.js, checkConnection.js
+│   ├── tests/             12 Jest suites + setup.js
+│   ├── utils/             ApiError.js, webhookDispatcher.js, metrics.js
+│   ├── app.js             Express app (exported for tests)
+│   ├── server.js          HTTP server + Socket.IO + graceful shutdown
+│   ├── socket.js          Socket.IO init / getIO
+│   ├── healthcheck.js
 │   ├── Dockerfile
 │   ├── docker-compose.yml
-│   ├── package.json
-│   └── package-lock.json
+│   └── .env.example
 │
 └── frontend/
     ├── src/
-    │   ├── components/
-    │   ├── context/
-    │   ├── layout/
-    │   ├── pages/
-    │   └── services/
-    ├── public/
-    ├── package.json
+    │   ├── components/    Sidebar, Topbar, StatCard, TransactionTable,
+    │   │                  TransactionFilters, WebhookLogs, charts/, ui/
+    │   ├── context/       AuthContext, AuthProvider
+    │   ├── layout/        DashboardLayout
+    │   ├── pages/         Login, Dashboard, Transactions, Analytics, Users,
+    │   │                  Security, Checkout, AdminPaymentCode, Webhooks
+    │   └── services/      api.js (Axios instance)
+    ├── vercel.json        SPA rewrite
     └── vite.config.js
 ```
+
+### Frontend Routes
+
+| Route | Page | Access |
+|-------|------|--------|
+| `/` | Login (with 2FA step) | Public |
+| `/dashboard`, `/transactions`, `/analytics` | Stats, transactions, charts | Authenticated |
+| `/checkout` | Create order, QR, verify UTR | Authenticated |
+| `/security` | Enable/disable 2FA | Authenticated |
+| `/users` | User management | Admin |
+| `/payment-code` | Valid payment codes | Admin |
+| `/webhooks` | Webhooks + delivery logs | Admin |
 
 ---
 
@@ -374,6 +453,14 @@ MONGO_URI=your_mongodb_uri
 SECRET=your_access_token_secret
 REFRESH_SECRET=your_refresh_token_secret
 REDIS_URL=your_redis_url
+```
+
+Optional variables are listed under [Environment Variables](#-environment-variables).
+
+Seed an admin account (optional; requires `SEED_ADMIN_EMAIL` and `SEED_ADMIN_PASSWORD` to be set):
+
+```bash
+node scripts/seedAdmin.js
 ```
 
 Start the backend:
@@ -459,6 +546,14 @@ MONGO_URI=your_mongodb_uri
 SECRET=your_access_token_secret
 REFRESH_SECRET=your_refresh_token_secret
 REDIS_URL=your_redis_url
+
+# Optional
+UPI_ID=merchant@upi               # payee in checkout QR codes (placeholder if unset)
+UPI_NAME=MerchantFlow             # payee name in QR codes
+WEBHOOK_TIMEOUT_MS=5000           # outbound webhook timeout
+METRICS_TOKEN=                    # if set, /metrics requires 'Authorization: Bearer <token>'
+SEED_ADMIN_EMAIL=admin@example.com    # used by scripts/seedAdmin.js
+SEED_ADMIN_PASSWORD=change-me         # used by scripts/seedAdmin.js
 ```
 
 ## Frontend
@@ -481,40 +576,85 @@ dist/
 
 # 🔌 API Overview
 
+`Auth` = Bearer access token required · `Admin` = admin role required.
+
 ## Authentication
 
 ```http
 POST /api/auth/login
+POST /api/auth/2fa/verify-login
 POST /api/auth/refresh
 POST /api/auth/logout
 ```
 
-## Dashboard
+## Two-Factor (Auth)
+
+```http
+GET  /api/2fa/status
+POST /api/2fa/setup
+POST /api/2fa/enable
+POST /api/2fa/disable
+```
+
+## Dashboard (Auth)
 
 ```http
 GET /api/dashboard
 ```
 
-## Transactions
+## Transactions (Auth; POST is Admin)
 
 ```http
-GET /api/transactions
+GET  /api/transactions?page=1&limit=10&status=Success
 POST /api/transactions
 ```
 
-## Users
+## Checkout (Auth)
 
 ```http
-GET /api/users
+POST /api/checkout              # create order + UPI QR
+GET  /api/checkout/:id          # order status (owner or admin)
+POST /api/checkout/:id/verify   # body: { "utr": "123456789012" }
+```
+
+## Valid Payment Codes (Admin)
+
+```http
+GET  /api/valid-payments
+POST /api/valid-payments
+```
+
+## Users (Admin)
+
+```http
+GET  /api/users
 POST /api/users
 ```
 
-## Health
+## Webhooks (Admin)
+
+```http
+GET    /api/webhooks
+POST   /api/webhooks                  # { url, events?, secret? }
+PATCH  /api/webhooks/:id              # { active: true|false }
+DELETE /api/webhooks/:id
+GET    /api/webhooks/:id/deliveries   # last 25 for one webhook
+GET    /api/webhooks/deliveries?transactionId=TXN-&page=1&limit=20
+```
+
+## Health, Metrics & Docs
 
 ```http
 GET /health
 GET /health/ready
+GET /metrics
+GET /api-docs
+GET /api-docs.json
 ```
+
+## Real-Time Events (Socket.IO)
+
+- `newTransaction` - emitted when a payment is verified or an admin adds a transaction
 
 ---
 
@@ -522,11 +662,12 @@ GET /health/ready
 
 ## 🔐 Security
 
+- Webhook retries with backoff and manual replay of failed deliveries
+- 2FA backup/recovery codes
 - Refresh token rotation on every use (currently: refresh token stays valid until logout/expiry)
 - Token reuse detection
 - More granular permissions
 - Structured/centralized logging (currently console-only)
-- Security headers (e.g. Helmet)
 - Audit logging
 
 ## 📊 Product Enhancements
@@ -541,13 +682,12 @@ GET /health/ready
 
 - Full-stack Docker Compose environment (Mongo + Redis containers alongside backend)
 - Nginx reverse proxy
-- Prometheus metrics / Grafana dashboards
 - Centralized log aggregation
 - Automated deployment pipelines
 
 ## 🧪 Testing
 
-- Coverage for `transactionController`, `userController`, and middleware
+- Coverage for `userController`, transaction listing/caching, and middleware
 - Frontend component/integration tests
 
 ## 🧠 Scalability
@@ -572,6 +712,8 @@ Building MerchantFlow involved solving several real-world engineering challenges
 - JWT authentication and refresh-token lifecycle management
 - Role-based authorization
 - Real-time communication with Socket.IO
+- Designing signed, logged outbound webhooks (HMAC, timeouts, delivery history)
+- TOTP two-factor authentication
 - API rate limiting
 - Centralized error handling
 - Automated API testing with mocked models

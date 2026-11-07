@@ -1,6 +1,7 @@
 const Transaction = require("../models/Transaction")
 const redis = require("../config/redis");
 const { getIO } = require("../socket");
+const { triggerWebhooks } = require("../utils/webhookDispatcher");
 // const { cache } = require("react");
 
 exports.getTransactions= async (req,res,next)=>{
@@ -81,6 +82,16 @@ exports.addTransaction= async (req,res, next)=>{
 
         const io = getIO();
         io.emit("newTransaction", newTxn);
+
+        if(newTxn.status === "Success"){
+            triggerWebhooks("payment.success", {
+                transactionId: newTxn.id,
+                orderId: newTxn._id,
+                amount: newTxn.amount,
+                utr: newTxn.utr,
+                status: newTxn.status
+            });
+        }
 
         res.status(201).json({
             success: true,

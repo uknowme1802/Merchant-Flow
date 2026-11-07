@@ -9,11 +9,13 @@ const {
     listWebhooks,
     toggleWebhook,
     deleteWebhook,
-    listDeliveries
+    listDeliveries,
+    listAllDeliveries
 } = require("../controllers/webhookController");
 
 router.post("/",authMiddleware, adminMiddleware, createWebhook);
 router.get("/", authMiddleware, adminMiddleware, listWebhooks);
+router.get("/deliveries", authMiddleware, adminMiddleware, listAllDeliveries);
 router.patch("/:id", authMiddleware, adminMiddleware, toggleWebhook);
 router.delete("/:id", authMiddleware, adminMiddleware, deleteWebhook);
 router.get("/:id/deliveries", authMiddleware, adminMiddleware, listDeliveries);
