@@ -331,15 +331,15 @@ Vercel (Frontend) · Render (Backend) · MongoDB Atlas · Redis (e.g. Upstash)
 ```text
                          ┌─────────────────────┐
                          │      React UI       │
-                         │   Vite + Tailwind    │
+                         │   Vite + Tailwind   │
                          └──────────┬──────────┘
                                     │
                          REST API / WebSocket
                                     │
                                     ▼
                          ┌─────────────────────┐
-                         │    Express App       │
-                         │       app.js         │
+                         │    Express App      │
+                         │       app.js        │
                          └──────────┬──────────┘
                                     │
               ┌─────────────────────┼─────────────────────┐
@@ -355,7 +355,7 @@ Vercel (Frontend) · Render (Backend) · MongoDB Atlas · Redis (e.g. Upstash)
    Middleware Check Limit           │
                                     ▼
                            ┌─────────────────┐
-                           │   Data Layer     │
+                           │   Data Layer    │
                            └───────┬─────────┘
                                    │
                     ┌──────────────┴──────────────┐
