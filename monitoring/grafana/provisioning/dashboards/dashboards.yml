@@ -1,0 +1,7 @@
+apiVersion: 1
+providers:
+  - name: MerchantFlow
+    folder: MerchantFlow
+    type: file
+    options:
+      path: /var/lib/grafana/dashboards
