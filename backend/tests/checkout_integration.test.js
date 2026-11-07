@@ -69,7 +69,8 @@ describe("Checkout flow (QR generation + 12-digits UTR verification",()=> {
             };
 
             Transaction.findById.mockResolvedValue(txn);
-            ValidPayment.findOne.mockResolvedValue(matchingPayment);
+            ValidPayment.findOneAndUpdate.mockResolvedValue({ ...matchingPayment, used: true });
+            Transaction.findOneAndUpdate.mockResolvedValue({ ...txn, status: "Success", utr: "968574859685" });
 
             const token = buildAccessToken("user-1");
 
@@ -80,8 +81,13 @@ describe("Checkout flow (QR generation + 12-digits UTR verification",()=> {
 
             expect(res.statusCode).toBe(200);
             expect(res.body.verified).toBe(true);
-            expect(txn.status).toBe("Success");
-            expect(matchingPayment.used).toBe(true);
+            expect(res.body.data.status).toBe("Success");
+            // The code is claimed atomically (only an unused code can match)
+            expect(ValidPayment.findOneAndUpdate).toHaveBeenCalledWith(
+                expect.objectContaining({ utr: "968574859685", amount: 500, used: false }),
+                expect.anything(),
+                expect.anything()
+            );
         });
 
         test("Verify stays Pending when the 12-digit UTR doesn't match any ValidPayment", async() => {
@@ -95,6 +101,7 @@ describe("Checkout flow (QR generation + 12-digits UTR verification",()=> {
             };
 
             Transaction.findById.mockResolvedValue(txn);
+            ValidPayment.findOneAndUpdate.mockResolvedValue(null);
             ValidPayment.findOne.mockResolvedValue(null);
 
             const token = buildAccessToken("user-1")
@@ -137,6 +144,7 @@ describe("Checkout-already-used UTR gets a distinct message", ()=>{
         };
 
         Transaction.findById.mockResolvedValue(txn);
+        ValidPayment.findOneAndUpdate.mockResolvedValue(null);
         ValidPayment.findOne.mockResolvedValue(usedRecord);
 
         const token = buildAccessToken("user-1");
@@ -169,7 +177,8 @@ describe("Checkout-already-used UTR gets a distinct message", ()=>{
         };
 
         Transaction.findById.mockResolvedValue(txn);
-        ValidPayment.findOne.mockResolvedValue(matchingPayment);
+        ValidPayment.findOneAndUpdate.mockResolvedValue({ ...matchingPayment, used: true });
+        Transaction.findOneAndUpdate.mockResolvedValue({ ...txn, status: "Success", utr: "968574859685" });
 
         const adminToken = buildAccessToken("admin-1","admin");
 
@@ -234,7 +243,8 @@ describe("Checkout - Webhook triggers", () => {
         };
 
         Transaction.findById.mockResolvedValue(txn);
-        ValidPayment.findOne.mockResolvedValue(matchingPayment);
+        ValidPayment.findOneAndUpdate.mockResolvedValue({ ...matchingPayment, used: true });
+        Transaction.findOneAndUpdate.mockResolvedValue({ ...txn, status: "Success", utr: "968574859685" });
 
         const token = buildAccessToken("user-1");
 
@@ -261,7 +271,8 @@ describe("Checkout - Webhook triggers", () => {
         };
 
         Transaction.findById.mockResolvedValue(txn);
-        ValidPayment.findOne.mockResolvedValue(null);
+        ValidPayment.findOneAndUpdate.mockResolvedValue(null);
+            ValidPayment.findOne.mockResolvedValue(null);
 
 
         const token = buildAccessToken("user-1");

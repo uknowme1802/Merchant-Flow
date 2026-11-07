@@ -1,7 +1,7 @@
 const mongoose = require("mongoose");
 const crypto = require("crypto");
 
-const WEBHOOK_EVENTS = ["checkout.created", "payment.success"];
+const WEBHOOK_EVENTS = require("../constants/webhookEvents");
 
 const webhookSchema = new mongoose.Schema({
     url: {

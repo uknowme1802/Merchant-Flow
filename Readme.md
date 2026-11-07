@@ -65,6 +65,9 @@ All role restrictions are enforced on the backend — not just hidden in the UI.
 - The UTR + amount is matched against admin-registered **Valid Payment Codes**; a match marks the order `Success` and consumes the code (one-time use)
 - Unknown or already-used UTRs leave the order `Pending`
 - Non-admins can only view/verify their own orders
+- **Idempotent checkout:** send an `Idempotency-Key` header and a repeated request (double click, network retry) returns the original order instead of creating a duplicate; the frontend sends one per checkout attempt
+- **Race-safe verification:** a payment code is claimed with a single atomic update, so one UTR can never be consumed twice, even by concurrent requests
+- Amounts must be greater than 0 with at most 2 decimals; they are rounded on write and summed in integer minor units (paise) so totals never drift
 - On success: the Redis transaction cache is cleared, a `newTransaction` Socket.IO event is emitted, and a `payment.success` webhook fires
 
 ### Admin: Payment Codes
@@ -83,7 +86,10 @@ Admins can register endpoints to be notified about payment events.
 - Enable/disable or delete webhooks at any time
 - Configurable timeout (`WEBHOOK_TIMEOUT_MS`, default 5000 ms); dispatch is fire-and-forget and never breaks the originating request
 - **Delivery logs tab:** date/time, transaction ID, event, endpoint, HTTP status/error; searchable by transaction ID (case-insensitive, regex-escaped) with pagination
-- Every delivery is stored with its `transactionId`, payload, status code, success flag and error
+- Every delivery is stored with its `transactionId`, payload, status code, success flag, error and attempt count
+- **Automatic retries with backoff** (1 min, 5 min, 30 min, 2 h; 5 attempts by default via `WEBHOOK_MAX_ATTEMPTS`). Retries are stored in MongoDB and run by a background worker, so they survive restarts, and each retry is claimed atomically so several instances never double-send
+- **Replay** any delivery from the logs tab (`POST /api/webhooks/deliveries/:id/replay`) to start a fresh retry cycle
+- Delivery logs expire automatically after 30 days (`WEBHOOK_LOG_RETENTION_DAYS`)
 
 Payload shape:
 
@@ -137,6 +143,7 @@ const valid = crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(req.head
 - bcrypt password hashing
 - Auth + role-based authorization middleware
 - Helmet security headers
+- **Joi validation on every write endpoint**: unknown fields are stripped (no mass assignment), emails/passwords/amounts/UTRs/URLs are checked, webhook secrets must be 16+ characters
 - Optional TOTP two-factor authentication
 - HMAC-signed webhook payloads
 - Global rate limiting (100 req / 15 min), with a tighter limiter (10 req / 15 min) on auth endpoints
@@ -177,6 +184,9 @@ MerchantFlow uses **Jest + Supertest** for backend API testing.
 - **Valid payments** - admin code creation/listing, access control
 - **Dashboard** - stats integration
 - **Webhooks** - controller (create/list/toggle/delete, delivery log search & pagination), dispatcher (signing, timeouts, delivery recording), transaction-triggered webhooks
+- **Hardening** - Joi validation, mass-assignment stripping, checkout idempotency (including the concurrent-request race), atomic UTR claim and rollback
+- **Webhook retries** - backoff schedule, worker, replay endpoint
+- **Money** - integer minor-unit helpers
 - **Observability** - `/metrics` output and token protection, OpenAPI document, security headers
 - **Health / Readiness** - health and readiness endpoints
 
@@ -190,8 +200,8 @@ npm test
 ### Current Test Status
 
 ```text
-Test Suites: 12 passed, 12 total
-Tests:       55 passed, 55 total
+Test Suites: 15 passed, 15 total
+Tests:       83 passed, 83 total
 ```
 
 ### Testing Stack
@@ -384,14 +394,16 @@ Merchant-Flow/
 │   ├── config/            db.js, redis.js
 │   ├── controllers/       auth, twoFactor, checkout, dashboard, transaction,
 │   │                      user, validPayment, webhook
-│   ├── middleware/        auth, admin, role, rateLimiter, authRateLimiter, error
+│   ├── middleware/        auth, admin, role, validate, rateLimiter, authRateLimiter, error
 │   ├── models/            User, Transaction, ValidPayment, Webhook, WebhookDelivery
 │   ├── routes/            auth, twoFactor, checkout, dashboard, transaction,
 │   │                      user, validPayment, webhook, health
 │   ├── docs/              openapi.yaml (served at /api-docs)
 │   ├── scripts/           seedAdmin.js, checkConnection.js
-│   ├── tests/             12 Jest suites + setup.js
-│   ├── utils/             ApiError.js, webhookDispatcher.js, metrics.js
+│   ├── tests/             15 Jest suites + setup.js
+│   ├── utils/             ApiError.js, webhookDispatcher.js (send + retry worker), metrics.js, money.js
+│   ├── validators/        schemas.js (Joi)
+│   ├── constants/         webhookEvents.js
 │   ├── app.js             Express app (exported for tests)
 │   ├── server.js          HTTP server + Socket.IO + graceful shutdown
 │   ├── socket.js          Socket.IO init / getIO
@@ -551,6 +563,9 @@ REDIS_URL=your_redis_url
 UPI_ID=merchant@upi               # payee in checkout QR codes (placeholder if unset)
 UPI_NAME=MerchantFlow             # payee name in QR codes
 WEBHOOK_TIMEOUT_MS=5000           # outbound webhook timeout
+WEBHOOK_MAX_ATTEMPTS=5            # total send attempts (first send + retries)
+WEBHOOK_RETRY_INTERVAL_MS=30000   # how often the retry worker runs
+WEBHOOK_LOG_RETENTION_DAYS=30     # delivery logs older than this are deleted
 METRICS_TOKEN=                    # if set, /metrics requires 'Authorization: Bearer <token>'
 SEED_ADMIN_EMAIL=admin@example.com    # used by scripts/seedAdmin.js
 SEED_ADMIN_PASSWORD=change-me         # used by scripts/seedAdmin.js
@@ -612,7 +627,7 @@ POST /api/transactions
 ## Checkout (Auth)
 
 ```http
-POST /api/checkout              # create order + UPI QR
+POST /api/checkout              # create order + UPI QR (optional Idempotency-Key header)
 GET  /api/checkout/:id          # order status (owner or admin)
 POST /api/checkout/:id/verify   # body: { "utr": "123456789012" }
 ```
@@ -640,6 +655,7 @@ PATCH  /api/webhooks/:id              # { active: true|false }
 DELETE /api/webhooks/:id
 GET    /api/webhooks/:id/deliveries   # last 25 for one webhook
 GET    /api/webhooks/deliveries?transactionId=TXN-&page=1&limit=20
+POST   /api/webhooks/deliveries/:id/replay   # re-send now, fresh retry cycle
 ```
 
 ## Health, Metrics & Docs

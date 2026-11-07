@@ -168,6 +168,17 @@ paths:
     post:
       tags: [Checkout]
       summary: Create an order and UPI QR code
+      description: |
+        `amount` must be greater than 0 with at most 2 decimal places.
+
+        **Idempotency:** send an `Idempotency-Key` header (1-128 chars: letters, numbers, `_ - : .`).
+        Repeating a request with the same key returns the original order (HTTP 200 with an
+        `Idempotent-Replayed: true` header) instead of creating a duplicate.
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: false
+          schema: { type: string, maxLength: 128 }
       requestBody:
         required: true
         content:
@@ -178,6 +189,8 @@ paths:
               properties:
                 amount: { type: number, exclusiveMinimum: 0, example: 500 }
       responses:
+        "200":
+          description: Replay of an earlier request with the same Idempotency-Key (returns the original order)
         "201":
           description: Order created (status `Pending`)
           content:
@@ -327,7 +340,12 @@ paths:
     post:
       tags: [Webhooks]
       summary: Register a webhook (admin)
-      description: The signing secret is generated if omitted and returned once, in this response.
+      description: |
+        The signing secret is generated if omitted and returned once, in this response.
+        A supplied secret must be at least 16 characters.
+
+        **Retries:** a failed delivery is retried automatically with backoff (1 min, 5 min, 30 min, 2 h;
+        5 attempts in total by default). Each log row shows `attempts` and `nextRetryAt`.
       requestBody:
         required: true
         content:
@@ -378,6 +396,17 @@ paths:
         - $ref: "#/components/parameters/Id"
       responses:
         "200": { description: Deliveries }
+  /api/webhooks/deliveries/{id}/replay:
+    post:
+      tags: [Webhooks]
+      summary: Re-send a delivery now (admin)
+      description: Sends the stored payload again and starts a fresh retry cycle if it fails.
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200": { description: "Replay result: success, statusCode, error, attempts" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: The webhook for this delivery no longer exists }
   /api/webhooks/deliveries:
     get:
       tags: [Webhooks]
