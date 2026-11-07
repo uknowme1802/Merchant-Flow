@@ -5,6 +5,7 @@ const ValidPayment = require("../models/ValidPayment");
 const redis = require("../config/redis");
 const { getIO } = require("../socket");
 const { triggerWebhooks } = require("../utils/webhookDispatcher");
+const { paymentVerifications } = require("../utils/metrics");
 
 const UTR_REGEX = /^\d{12}$/;
 
@@ -132,6 +133,7 @@ exports.verifyPayment = async (req, res, next) => {
         })
 
         if (matchingPayment && matchingPayment.used){
+            paymentVerifications.inc({ outcome: "already_used" });
             txn.utr = trimmedUtr;
             txn.status ="Pending";
             await txn.save();
@@ -146,6 +148,7 @@ exports.verifyPayment = async (req, res, next) => {
         }
 
         if (!matchingPayment){
+            paymentVerifications.inc({ outcome: "pending" });
             txn.utr = trimmedUtr;
             txn.status = "Pending";
             await txn.save();
@@ -158,6 +161,7 @@ exports.verifyPayment = async (req, res, next) => {
             })
         }
 
+        paymentVerifications.inc({ outcome: "verified" });
         matchingPayment.used = true;
         await matchingPayment.save();
 

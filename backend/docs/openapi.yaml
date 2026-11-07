@@ -1,0 +1,500 @@
+openapi: 3.0.3
+info:
+  title: MerchantFlow API
+  version: 1.0.0
+  description: |
+    Payment analytics and checkout API. Create orders, verify UPI payments by UTR,
+    and receive HMAC-signed webhooks for payment events.
+
+    **Integration flow**
+    1. `POST /api/auth/login` to get an access token (and complete 2FA if enabled).
+    2. `POST /api/checkout` to create an order and get a UPI QR code.
+    3. `POST /api/checkout/{id}/verify` with the payer's 12-digit UTR.
+    4. Receive `payment.success` on your webhook endpoint and verify `X-Webhook-Signature`.
+
+    **Webhook signature:** `HMAC_SHA256(secret, rawBody)` as a hex digest, sent in `X-Webhook-Signature`.
+servers:
+  - url: https://merchant-flow-seuw.onrender.com
+    description: Production
+  - url: http://localhost:5000
+    description: Local
+tags:
+  - name: Auth
+  - name: Two-Factor
+  - name: Checkout
+  - name: Transactions
+  - name: Dashboard
+  - name: Users
+  - name: Payment Codes
+  - name: Webhooks
+  - name: Ops
+security:
+  - bearerAuth: []
+paths:
+  /api/auth/login:
+    post:
+      tags: [Auth]
+      summary: Log in
+      description: Returns tokens, or `twoFactorRequired` with a `pendingToken` when 2FA is enabled. Rate limited to 10 requests / 15 min.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string, format: password }
+      responses:
+        "200":
+          description: Logged in, or 2FA required
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/LoginResponse"
+                  - $ref: "#/components/schemas/TwoFactorRequired"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+  /api/auth/2fa/verify-login:
+    post:
+      tags: [Auth]
+      summary: Complete login with a TOTP code
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [pendingToken, token]
+              properties:
+                pendingToken: { type: string }
+                token: { type: string, example: "123456" }
+      responses:
+        "200":
+          description: Logged in
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/LoginResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /api/auth/refresh:
+    post:
+      tags: [Auth]
+      summary: Get a new access token
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token]
+              properties:
+                token: { type: string, description: Refresh token }
+      responses:
+        "200":
+          description: New access token
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /api/auth/logout:
+    post:
+      tags: [Auth]
+      summary: Revoke the refresh token
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token]
+              properties:
+                token: { type: string }
+      responses:
+        "200": { description: Logged out }
+        "400": { $ref: "#/components/responses/BadRequest" }
+  /api/2fa/status:
+    get:
+      tags: [Two-Factor]
+      summary: Whether 2FA is enabled for the current user
+      responses:
+        "200": { description: OK }
+  /api/2fa/setup:
+    post:
+      tags: [Two-Factor]
+      summary: Start 2FA setup (returns a QR code and temporary secret)
+      responses:
+        "200": { description: QR code for an authenticator app }
+        "400": { $ref: "#/components/responses/BadRequest" }
+  /api/2fa/enable:
+    post:
+      tags: [Two-Factor]
+      summary: Confirm setup with a TOTP code
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token]
+              properties:
+                token: { type: string, example: "123456" }
+      responses:
+        "200": { description: 2FA enabled }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/2fa/disable:
+    post:
+      tags: [Two-Factor]
+      summary: Disable 2FA with a valid TOTP code
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token]
+              properties:
+                token: { type: string, example: "123456" }
+      responses:
+        "200": { description: 2FA disabled }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/checkout:
+    post:
+      tags: [Checkout]
+      summary: Create an order and UPI QR code
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [amount]
+              properties:
+                amount: { type: number, exclusiveMinimum: 0, example: 500 }
+      responses:
+        "201":
+          description: Order created (status `Pending`)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  data: { $ref: "#/components/schemas/Transaction" }
+                  qrCode: { type: string, description: PNG data URL of the UPI QR }
+                  upiId: { type: string }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/checkout/{id}:
+    get:
+      tags: [Checkout]
+      summary: Get order status
+      description: Owner or admin only.
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          description: Order
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  data: { $ref: "#/components/schemas/Transaction" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/checkout/{id}/verify:
+    post:
+      tags: [Checkout]
+      summary: Verify a payment by UTR
+      description: |
+        Matches the UTR and order amount against registered payment codes. A match marks
+        the order `Success`, consumes the code, and fires `payment.success`. An unknown or
+        already-used UTR leaves the order `Pending`.
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [utr]
+              properties:
+                utr: { type: string, pattern: '^\d{12}$', example: "123456789012" }
+      responses:
+        "200":
+          description: Verification result
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  verified: { type: boolean }
+                  alreadyUsed: { type: boolean }
+                  message: { type: string }
+                  data: { $ref: "#/components/schemas/Transaction" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/transactions:
+    get:
+      tags: [Transactions]
+      summary: List transactions (paginated, Redis-cached for 60 s)
+      parameters:
+        - { name: page, in: query, schema: { type: integer, default: 1 } }
+        - { name: limit, in: query, schema: { type: integer, default: 10 } }
+        - { name: status, in: query, schema: { type: string, enum: [Success, Pending, Failed] } }
+      responses:
+        "200": { description: Transactions page }
+    post:
+      tags: [Transactions]
+      summary: Create a transaction (admin)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/Transaction" }
+      responses:
+        "201": { description: Created }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /api/dashboard:
+    get:
+      tags: [Dashboard]
+      summary: Revenue and transaction statistics
+      responses:
+        "200": { description: Dashboard stats }
+  /api/users:
+    get:
+      tags: [Users]
+      summary: List users (admin)
+      responses:
+        "200": { description: Users }
+        "403": { $ref: "#/components/responses/Forbidden" }
+    post:
+      tags: [Users]
+      summary: Create a user (admin)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string, format: password }
+                role: { type: string, enum: [admin, user] }
+      responses:
+        "201": { description: Created }
+        "409": { description: Email already in use }
+  /api/valid-payments:
+    get:
+      tags: [Payment Codes]
+      summary: List registered payment codes (admin)
+      responses:
+        "200": { description: Payment codes }
+    post:
+      tags: [Payment Codes]
+      summary: Register a valid payment code (admin)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [utr, amount]
+              properties:
+                utr: { type: string, example: "123456789012" }
+                amount: { type: number, example: 500 }
+      responses:
+        "201": { description: Created }
+        "409": { description: UTR already registered }
+  /api/webhooks:
+    get:
+      tags: [Webhooks]
+      summary: List webhooks (admin)
+      responses:
+        "200": { description: Webhooks (secrets are never returned) }
+    post:
+      tags: [Webhooks]
+      summary: Register a webhook (admin)
+      description: The signing secret is generated if omitted and returned once, in this response.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [url]
+              properties:
+                url: { type: string, format: uri }
+                events:
+                  type: array
+                  items: { $ref: "#/components/schemas/WebhookEvent" }
+                secret: { type: string }
+      responses:
+        "201": { description: Created }
+        "400": { $ref: "#/components/responses/BadRequest" }
+  /api/webhooks/{id}:
+    patch:
+      tags: [Webhooks]
+      summary: Enable or disable a webhook (admin)
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [active]
+              properties:
+                active: { type: boolean }
+      responses:
+        "200": { description: Updated }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [Webhooks]
+      summary: Delete a webhook (admin)
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200": { description: Deleted }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/webhooks/{id}/deliveries:
+    get:
+      tags: [Webhooks]
+      summary: Last 25 deliveries for one webhook (admin)
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200": { description: Deliveries }
+  /api/webhooks/deliveries:
+    get:
+      tags: [Webhooks]
+      summary: Delivery logs across all webhooks (admin)
+      parameters:
+        - { name: transactionId, in: query, description: Case-insensitive "contains" search, schema: { type: string } }
+        - { name: page, in: query, schema: { type: integer, default: 1 } }
+        - { name: limit, in: query, schema: { type: integer, default: 20, maximum: 100 } }
+      responses:
+        "200": { description: Paginated delivery logs }
+  /health:
+    get:
+      tags: [Ops]
+      summary: Liveness check
+      security: []
+      responses:
+        "200": { description: Healthy }
+  /health/ready:
+    get:
+      tags: [Ops]
+      summary: Readiness check (MongoDB and Redis)
+      security: []
+      responses:
+        "200": { description: Ready }
+        "503": { description: A dependency is down }
+  /metrics:
+    get:
+      tags: [Ops]
+      summary: Prometheus metrics
+      description: "If METRICS_TOKEN is set, send an Authorization header of the form: Bearer <token>."
+      security: []
+      responses:
+        "200":
+          description: Prometheus text format
+          content:
+            text/plain: { schema: { type: string } }
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    Id:
+      name: id
+      in: path
+      required: true
+      schema: { type: string }
+  schemas:
+    WebhookEvent:
+      type: string
+      enum: [checkout.created, payment.success]
+    Transaction:
+      type: object
+      properties:
+        _id: { type: string }
+        id: { type: string, example: "TXN-0f8b2c1e-..." }
+        amount: { type: number }
+        status: { type: string, enum: [Success, Pending, Failed] }
+        date: { type: string, format: date-time }
+        utr: { type: string, nullable: true }
+        userId: { type: string, nullable: true }
+    LoginResponse:
+      type: object
+      properties:
+        success: { type: boolean }
+        accessToken: { type: string }
+        refreshToken: { type: string }
+        user:
+          type: object
+          properties:
+            id: { type: string }
+            email: { type: string }
+            role: { type: string, enum: [admin, user] }
+    TwoFactorRequired:
+      type: object
+      properties:
+        success: { type: boolean }
+        twoFactorRequired: { type: boolean }
+        pendingToken: { type: string }
+    Error:
+      type: object
+      properties:
+        success: { type: boolean, example: false }
+        message: { type: string }
+    WebhookPayload:
+      type: object
+      description: Body POSTed to your endpoint. Headers `X-Webhook-Signature` and `X-Webhook-Event` are included.
+      properties:
+        event: { $ref: "#/components/schemas/WebhookEvent" }
+        timestamp: { type: string, format: date-time }
+        data:
+          type: object
+          properties:
+            transactionId: { type: string }
+            orderId: { type: string }
+            amount: { type: number }
+            utr: { type: string }
+            status: { type: string }
+  responses:
+    BadRequest:
+      description: Invalid input
+      content:
+        application/json: { schema: { $ref: "#/components/schemas/Error" } }
+    Unauthorized:
+      description: Missing or invalid credentials
+      content:
+        application/json: { schema: { $ref: "#/components/schemas/Error" } }
+    Forbidden:
+      description: Not allowed for this role or resource
+      content:
+        application/json: { schema: { $ref: "#/components/schemas/Error" } }
+    NotFound:
+      description: Not found
+      content:
+        application/json: { schema: { $ref: "#/components/schemas/Error" } }
+    TooManyRequests:
+      description: Rate limit exceeded
+      content:
+        application/json: { schema: { $ref: "#/components/schemas/Error" } }
