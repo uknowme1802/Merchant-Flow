@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
-import { Search, RefreshCw } from "lucide-react";
+import { Search, RefreshCw, RotateCw } from "lucide-react";
+import toast from "react-hot-toast";
 import API from "../services/api";
 import Pagination from "./ui/Pagination";
 
@@ -20,6 +21,7 @@ export default function WebhookLogs() {
     const [total, setTotal] = useState(0);
     const [loading, setLoading] = useState(true);
     const [failed, setFailed] = useState(false);
+    const [replaying, setReplaying] = useState(null);
 
     // Debounce typing so we don't hit the API on every keystroke
     useEffect(() => {
@@ -50,6 +52,23 @@ export default function WebhookLogs() {
     useEffect(() => {
         loadLogs();
     }, [loadLogs]);
+
+    const replay = async (id) => {
+        setReplaying(id);
+        try {
+            const res = await API.post(`/webhooks/deliveries/${id}/replay`);
+            if (res.data.data.success) {
+                toast.success("Webhook re-sent and delivered");
+            } else {
+                toast.error(res.data.data.error || "Receiver still failing");
+            }
+            await loadLogs();
+        } catch (error) {
+            toast.error(error.response?.data?.message || "Replay failed");
+        } finally {
+            setReplaying(null);
+        }
+    };
 
     const totalPages = Math.max(Math.ceil(total / PAGE_SIZE), 1);
 
@@ -99,6 +118,7 @@ export default function WebhookLogs() {
                                 <th className="py-2 pr-3 font-medium">Event</th>
                                 <th className="py-2 pr-3 font-medium">Sent to</th>
                                 <th className="py-2 pr-3 font-medium text-right">Code</th>
+                                <th className="py-2 pr-3 font-medium text-right">Attempts</th>
                                 <th className="py-2 font-medium text-right">Status</th>
                             </tr>
                         </thead>
@@ -115,10 +135,25 @@ export default function WebhookLogs() {
                                         {d.webhook?.url ?? <span className="text-gray-400">(webhook deleted)</span>}
                                     </td>
                                     <td className="py-2 pr-3 text-right text-gray-500">{d.statusCode ?? "-"}</td>
+                                    <td className="py-2 pr-3 text-right text-gray-500">{d.attempts ?? 1}</td>
                                     <td className="py-2 text-right whitespace-nowrap">
-                                        <span className={d.success ? "text-green-600" : "text-red-600"}>
-                                            {d.success ? "Delivered" : "Failed"}
+                                        <span className={d.success ? "text-green-600" : d.nextRetryAt ? "text-amber-600" : "text-red-600"}>
+                                            {d.success ? "Delivered" : d.nextRetryAt ? "Retrying" : "Failed"}
                                         </span>
+                                        {!d.success && d.nextRetryAt && (
+                                            <span className="block text-gray-400">
+                                                next {formatTime(d.nextRetryAt)}
+                                            </span>
+                                        )}
+                                        {!d.success && (
+                                            <button
+                                                onClick={() => replay(d._id)}
+                                                disabled={replaying === d._id}
+                                                className="mt-1 inline-flex items-center gap-1 text-indigo-600 hover:underline disabled:opacity-50"
+                                            >
+                                                <RotateCw size={12} /> {replaying === d._id ? "Sending..." : "Replay"}
+                                            </button>
+                                        )}
                                         {!d.success && d.error && (
                                             <span className="block text-red-500 break-words">{d.error}</span>
                                         )}

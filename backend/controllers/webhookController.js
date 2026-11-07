@@ -1,5 +1,6 @@
 const Webhook = require("../models/Webhook");
 const WebhookDelivery = require("../models/WebhookDelivery");
+const { replayDelivery } = require("../utils/webhookDispatcher");
 
 exports.createWebhook = async ( req, res, next ) => {
     try {
@@ -160,6 +161,20 @@ exports.listAllDeliveries = async (req, res, next) => {
 
         res.json({ success: true, page, limit, total, data });
     } catch(err){
+        next(err);
+    }
+};
+
+// POST /api/webhooks/deliveries/:id/replay
+// Re-sends a stored delivery now and starts a fresh retry cycle if it fails again.
+exports.replayDeliveryHandler = async (req, res, next) => {
+    try {
+        const result = await replayDelivery(req.params.id);
+        res.json({ success: true, data: result });
+    } catch(err){
+        if(err.status){
+            return res.status(err.status).json({ success: false, message: err.message });
+        }
         next(err);
     }
 };

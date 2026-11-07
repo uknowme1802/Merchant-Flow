@@ -99,6 +99,12 @@ exports.addTransaction= async (req,res, next)=>{
         })
     } catch(err){
         // console.error("Error adding transaction:", err.message);
+        if(err.code === 11000){
+            return res.status(409).json({
+                success: false,
+                message: "A transaction with this ID already exists"
+            });
+        }
         next(err);
     }
 }

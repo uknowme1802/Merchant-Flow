@@ -103,7 +103,7 @@ export default function Transactions(){
     try{
       await API.post("/transactions",{
         id: "Txn" + Math.floor(Math.random() * 10000),
-        amount:Math.floor(Math.random()*1000),
+        amount:Math.floor(Math.random()*999)+1,
         status: "Success",
         date: new Date().toISOString().split("T")[0]
       });
