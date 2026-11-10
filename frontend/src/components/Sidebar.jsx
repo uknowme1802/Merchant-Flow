@@ -1,4 +1,4 @@
-import { LayoutDashboard, CreditCard, BarChart3, Shield, ShieldCheck, ShoppingCart, KeyRound, Webhook } from "lucide-react"
+import { LayoutDashboard, CreditCard, BarChart3, Shield, ShieldCheck, ShoppingCart, KeyRound, Webhook, Store, Users as UsersIcon } from "lucide-react"
 import { useContext } from "react"
 import { NavLink } from "react-router-dom"
 import { AuthContext } from "../context/AuthContext"
@@ -7,6 +7,21 @@ import { AuthContext } from "../context/AuthContext"
 
 export default function Sidebar(){
     const { user } = useContext(AuthContext);
+    const link = ({isActive}) => `flex items-center gap-3 p-2 rounded-lg ${isActive ? "bg-indigo-100 text-indigo-600" : "text-gray-600"}`;
+
+    if(user?.role === "merchant"){
+        return(
+            <div className="w-64 bg-white border-r h-full p-6">
+                <h1 className="text-2xl font-bold text-indigo-600 mb-10">Merchant Flow</h1>
+                <nav className="flex flex-col gap-4">
+                    <NavLink to="/merchant" end className={link}><Store size={18} /> Account</NavLink>
+                    <NavLink to="/merchant/credentials" className={link}><KeyRound size={18} /> API credentials</NavLink>
+                    <NavLink to="/merchant/team" className={link}><UsersIcon size={18} /> Team</NavLink>
+                </nav>
+            </div>
+        )
+    }
+
     return(
         <div className="w-64 bg-white border-r h-full p-6">
             <h1 className="text-2xl font-bold text-indigo-600 mb-10">Merchant Flow</h1>
@@ -25,6 +40,12 @@ export default function Sidebar(){
                         "bg-indigo-100 text-indigo-600": "text-gray-600"}`}>
                             <BarChart3 size={18} /> Analytics
                 </NavLink>
+
+                {user?.role === "admin" && (
+                    <NavLink to="/admin/merchants" className={link}>
+                        <Store size={18} /> Merchants
+                    </NavLink>
+                )}
 
                 {user?.role === "admin" && (
                     <NavLink to="/users" className={({isActive})=>`flex items-center gap-3 p-2 rounded-lg ${isActive? 

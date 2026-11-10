@@ -1,4 +1,4 @@
-import { useNavigate } from "react-router-dom"
+import { useNavigate, Link } from "react-router-dom"
 import { useState, useContext } from "react"
 import { AuthContext } from "../context/AuthContext"
 import API from "../services/api"
@@ -26,7 +26,7 @@ export default function Login(){
   };
   login(userData, res.data.accessToken, res.data.refreshToken)
   toast.success("Login Successfull!")
-  navigate("/dashboard");
+  navigate(res.data.user.role === "merchant" ? "/merchant" : "/dashboard");
  }
 
  const handleLogin = async ()=>{
@@ -139,6 +139,10 @@ export default function Login(){
     >
       Login
     </Button>
+
+    <p className="text-sm text-gray-500 mt-4 text-center">
+      New merchant? <Link to="/signup" className="text-indigo-600 hover:underline">Apply here</Link>
+    </p>
 
    </div>
 
