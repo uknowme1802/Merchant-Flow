@@ -699,7 +699,6 @@ What is **not** built yet, in rough priority order. This project simulates a pay
 
 - **Real payment provider integration** (bank/PSP callbacks instead of admin-entered UTR codes), plus refunds, partial payments and reconciliation
 - **Pending-order expiry:** unpaid orders currently stay `Pending` forever
-- **Silent token refresh in the frontend:** the refresh token is issued but not used, so users are signed out after 15 minutes
 - **httpOnly-cookie sessions** instead of tokens in `localStorage` (XSS exposure)
 - **Refresh-token rotation and reuse detection**
 - **Password reset, email verification and account lockout** after repeated failed logins
