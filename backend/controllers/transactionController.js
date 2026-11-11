@@ -1,14 +1,23 @@
 const Transaction = require("../models/Transaction")
 const redis = require("../config/redis");
+const { clearTransactionCache } = require("../utils/cache");
+const logger = require("../utils/logger");
 const { getIO } = require("../socket");
 const { triggerWebhooks } = require("../utils/webhookDispatcher");
 // const { cache } = require("react");
 
+const VALID_STATUSES = ["Success", "Pending", "Failed"];
+
 exports.getTransactions= async (req,res,next)=>{
     try{
-        const { page=1, limit =10, status } = req.query;
-        //console.log("getTransactions called with params:", {page, limit, status});
-        const cacheKey = `transactions:${page}:${limit}:${status || "all"}`
+        // Clamp paging so a client cannot request an unbounded page size
+        const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
+        const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 10, 1), 100);
+        const status = VALID_STATUSES.includes(req.query.status) ? req.query.status : undefined;
+
+        // Admins see every transaction; everyone else only sees their own orders
+        const isAdmin = req.user.role === "admin";
+        const cacheKey = `transactions:${isAdmin ? "all" : req.user.id}:${page}:${limit}:${status || "all"}`
         
         // Check cache if redis is available
             if(redis){
@@ -19,16 +28,17 @@ exports.getTransactions= async (req,res,next)=>{
                         return res.json(JSON.parse(cachedData))
                     }
                 } catch(cacheErr){
-                    console.warn("Warning: Redis cache read Failed: ", cacheErr.message)
+                    logger.warn("Redis cache read failed", { error: cacheErr.message })
                 }
             }
 
         const query={};
+        if(!isAdmin) query.userId = req.user.id;
         if(status) query.status=status;
         const transactions = await Transaction.find(query)
         .sort({createdAt: -1})
         .skip((page-1)*limit)
-        .limit(Number(limit));
+        .limit(limit);
 
         const total = await Transaction.countDocuments(query);
         // console.log(`Found ${transactions.length} transactions (total: ${total})`);
@@ -47,7 +57,7 @@ exports.getTransactions= async (req,res,next)=>{
             await redis.set(cacheKey, JSON.stringify(response), "EX", 60)
             // console.log("Cached data for key:", cacheKey);
             } catch (cacheErr){
-                console.warn("Warning: Redis cache write Failed: ", cacheErr.message)
+                logger.warn("Redis cache write failed", { error: cacheErr.message })
             }
         }
 
@@ -65,20 +75,7 @@ exports.addTransaction= async (req,res, next)=>{
         await newTxn.save();
         // console.log("Transaction saved successfully:", newTxn);
         
-        // Clear ALL redis cache for transactions when a new one is added
-        if(redis){
-            try {
-                const keys = await redis.keys("transactions:*");
-                // console.log("Found cache keys to clear:", keys);
-                if(keys && keys.length > 0){
-                    await redis.del(...keys);
-                    console.log("Cache cleared successfully");
-                }
-            } catch (cacheErr) {
-                console.warn("Warning: Could not clear cache:", cacheErr.message);
-                // Don't fail the request if cache clearing fails
-            }
-        }
+        await clearTransactionCache();
 
         const io = getIO();
         io.emit("newTransaction", newTxn);

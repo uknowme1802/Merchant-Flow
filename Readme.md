@@ -1,5 +1,8 @@
 # 🚀 MerchantFlow Dashboard
 
+[![Backend CI](https://github.com/uknowme1802/Merchant-Flow/actions/workflows/backend-ci.yml/badge.svg)](https://github.com/uknowme1802/Merchant-Flow/actions/workflows/backend-ci.yml)
+[![Frontend CI](https://github.com/uknowme1802/Merchant-Flow/actions/workflows/frontend-ci.yml/badge.svg)](https://github.com/uknowme1802/Merchant-Flow/actions/workflows/frontend-ci.yml)
+
 A **full-stack payment analytics platform** with JWT authentication, optional TOTP two-factor auth, role-based access control, UPI-style checkout with UTR verification, signed outbound webhooks with delivery logs, real-time transaction updates, Redis caching, automated testing, Docker containerization, and CI/CD.
 
 ---
@@ -129,6 +132,10 @@ const valid = crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(req.head
 
 ## 📈 Observability & API Docs
 
+- **Structured logging** (Winston): JSON lines in production, readable text in development, with a per-request ID (`X-Request-Id`, also returned in error bodies) so a failing request can be traced through the logs; `LOG_LEVEL` controls verbosity
+- **Safe errors:** 5xx details are logged but never sent to clients in production
+- **Startup validation:** the server refuses to start if `MONGO_URI`, `SECRET` or `REFRESH_SECRET` are missing, and warns about weak or identical secrets, a public `/metrics`, or missing Redis
+- **Graceful shutdown:** on SIGTERM/SIGINT it stops the retry worker, closes Socket.IO and the HTTP server, then MongoDB and Redis (10 s hard timeout)
 - **Prometheus metrics** at `GET /metrics` (optionally protected with `METRICS_TOKEN`): HTTP latency histogram by route/method/status, webhook delivery outcomes, payment verification outcomes, plus Node process metrics
 - **Grafana dashboard** (auto-provisioned): request rate, p50/p95/p99 latency, 5xx ratio, payment and webhook outcomes, memory
 - **OpenAPI 3 docs** with Swagger UI at `/api-docs` (raw spec at `/api-docs.json`), written for merchants integrating with the API
@@ -142,7 +149,9 @@ const valid = crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(req.head
 - Refresh token validation and revocation
 - bcrypt password hashing
 - Auth + role-based authorization middleware
-- Helmet security headers
+- Helmet security headers, request-size limit (100 kb) and JSON 404s
+- **SSRF protection for webhooks:** URLs that resolve to private, loopback or link-local addresses (e.g. cloud metadata) are rejected, and redirects are never followed
+- **Users only see their own transactions and dashboard**; admins see everything. Page size is capped at 100
 - **Joi validation on every write endpoint**: unknown fields are stripped (no mass assignment), emails/passwords/amounts/UTRs/URLs are checked, webhook secrets must be 16+ characters
 - Optional TOTP two-factor authentication
 - HMAC-signed webhook payloads
@@ -187,6 +196,8 @@ MerchantFlow uses **Jest + Supertest** for backend API testing.
 - **Hardening** - Joi validation, mass-assignment stripping, checkout idempotency (including the concurrent-request race), atomic UTR claim and rollback
 - **Webhook retries** - backoff schedule, worker, replay endpoint
 - **Money** - integer minor-unit helpers
+- **Security** - SSRF guard, per-user transaction visibility, paging limits
+- **Production setup** - request IDs, error handling that does not leak internals, startup validation, CORS origins
 - **Observability** - `/metrics` output and token protection, OpenAPI document, security headers
 - **Health / Readiness** - health and readiness endpoints
 
@@ -200,8 +211,8 @@ npm test
 ### Current Test Status
 
 ```text
-Test Suites: 15 passed, 15 total
-Tests:       83 passed, 83 total
+Test Suites: 17 passed, 17 total
+Tests:       124 passed, 124 total
 ```
 
 ### Testing Stack
@@ -291,6 +302,8 @@ GitHub Actions runs two pipelines on every push/PR to `Main`, plus a scheduled k
 ├── frontend-ci.yml       → install, lint, build
 └── keep-render-alive.yml → pings the Render /health endpoint every 5 minutes
 ```
+
+Both CI pipelines also run `npm audit` and fail on high/critical vulnerabilities in production dependencies. Dependabot opens weekly update PRs.
 
 A `Jenkinsfile` at the repo root runs the same stages (backend tests, frontend lint/build, Docker image) on Jenkins.
 
@@ -400,7 +413,7 @@ Merchant-Flow/
 │   │                      user, validPayment, webhook, health
 │   ├── docs/              openapi.yaml (served at /api-docs)
 │   ├── scripts/           seedAdmin.js, checkConnection.js
-│   ├── tests/             15 Jest suites + setup.js
+│   ├── tests/             17 Jest suites + setup.js
 │   ├── utils/             ApiError.js, webhookDispatcher.js (send + retry worker), metrics.js, money.js
 │   ├── validators/        schemas.js (Joi)
 │   ├── constants/         webhookEvents.js
@@ -548,7 +561,7 @@ docker compose down
 
 # 🔑 Environment Variables
 
-Never commit `.env` files to GitHub.
+Never commit `.env` files to GitHub. Copy `backend/.env.example` and `frontend/.env.example` to get started. Generate secrets with `node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"`.
 
 ## Backend
 
@@ -567,6 +580,10 @@ WEBHOOK_MAX_ATTEMPTS=5            # total send attempts (first send + retries)
 WEBHOOK_RETRY_INTERVAL_MS=30000   # how often the retry worker runs
 WEBHOOK_LOG_RETENTION_DAYS=30     # delivery logs older than this are deleted
 METRICS_TOKEN=                    # if set, /metrics requires 'Authorization: Bearer <token>'
+ALLOWED_ORIGINS=https://your-frontend.app   # comma-separated CORS / Socket.IO origins
+TRUST_PROXY=1                     # reverse proxies in front of the API (Render = 1)
+LOG_LEVEL=info                    # error | warn | info | debug
+WEBHOOK_ALLOW_PRIVATE=false       # true only to test webhooks against localhost
 SEED_ADMIN_EMAIL=admin@example.com    # used by scripts/seedAdmin.js
 SEED_ADMIN_PASSWORD=change-me         # used by scripts/seedAdmin.js
 ```
@@ -674,45 +691,52 @@ GET /api-docs.json
 
 ---
 
-# 🚧 Future Enhancements
+# 🚧 Known Gaps & Roadmap
 
-## 🔐 Security
+What is **not** built yet, in rough priority order. This project simulates a payment platform: payments are verified against admin-registered codes, not a real bank or PSP.
 
-- Webhook retries with backoff and manual replay of failed deliveries
-- 2FA backup/recovery codes
-- Refresh token rotation on every use (currently: refresh token stays valid until logout/expiry)
-- Token reuse detection
-- More granular permissions
-- Structured/centralized logging (currently console-only)
-- Audit logging
+## Must-have before real money
 
-## 📊 Product Enhancements
+- **Real payment provider integration** (bank/PSP callbacks instead of admin-entered UTR codes), plus refunds, partial payments and reconciliation
+- **Pending-order expiry:** unpaid orders currently stay `Pending` forever
+- **httpOnly-cookie sessions** instead of tokens in `localStorage` (XSS exposure)
+- **Refresh-token rotation and reuse detection**
+- **Password reset, email verification and account lockout** after repeated failed logins
+- **2FA recovery codes**, and encryption at rest for 2FA secrets and webhook signing secrets
+- **Audit log** of admin actions (users, webhooks, payment codes)
+- **Merchant/tenant model:** roles are only `admin` and `user`; there is no organisation or API-key concept for merchants integrating by API
 
-- Advanced analytics dashboard
-- Payment method insights
-- Transaction categorization
-- Revenue forecasting
-- Exportable analytics reports
+## Reliability & operations
 
-## ⚙️ DevOps
+- **Shared rate limiting:** limits are per instance and in memory; use a Redis store before running more than one instance
+- **Dashboard aggregation in the database:** it currently loads every matching transaction into memory
+- **Pagination on the users list**
+- **Error tracking** (e.g. Sentry) and distributed tracing
+- **Prometheus alert rules** and Alertmanager (error rate, latency, webhook failures)
+- **Backups and a restore drill** for MongoDB; a staging environment; infrastructure as code
+- **Automated deploys** with smoke tests and rollback (deploys currently rely on Render/Vercel auto-deploy)
+- **Database migrations tool** for schema/index changes
+- **Load test** with published p95 targets
 
-- Full-stack Docker Compose environment (Mongo + Redis containers alongside backend)
-- Nginx reverse proxy
-- Centralized log aggregation
-- Automated deployment pipelines
+## Testing
 
-## 🧪 Testing
+- **End-to-end tests** (Playwright) for login, checkout and verification
+- **Frontend component tests** (there are none)
+- Coverage for `userController` and the `authController` edge cases
+- Mutation or coverage thresholds enforced in CI
 
-- Coverage for `userController`, transaction listing/caching, and middleware
-- Frontend component/integration tests
+## Product
 
-## 🧠 Scalability
+- Email/SMS notifications and downloadable receipts or invoices
+- Server-side CSV export, date-range filters and search on transactions
+- Multi-currency (currently INR only); amounts are validated and summed in integer minor units but stored as decimals, so a full minor-unit migration is still open
+- Advanced analytics, payment-method insights, revenue forecasting
+- Accessibility audit and frontend code-splitting (the main bundle is over 500 kB)
 
-- Background job processing (e.g. BullMQ)
-- Event streaming (e.g. Kafka)
-- Microservices architecture
-- Horizontal scaling
-- Distributed caching
+## Repository
+
+- A `LICENSE`, `CONTRIBUTING.md`, `SECURITY.md` and a changelog
+- A generated Postman collection from the OpenAPI spec
 
 ---
 

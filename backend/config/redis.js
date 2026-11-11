@@ -1,4 +1,5 @@
 const Redis = require("ioredis");
+const logger = require("../utils/logger");
 
 let redis = null;
 
@@ -11,7 +12,7 @@ try {
 
       retryStrategy: (times)=>{
         if(times>3){
-          console.error("❌Redis retries limit reached");
+          logger.error("Redis retry limit reached");
           return null;
         }
         return Math.min(times*500, 2000);
@@ -19,17 +20,17 @@ try {
     });
 
     redis.on("connect", () => {
-      console.log("✅ Redis connected");
+      logger.info("Redis connected");
     });
 
     redis.on("error", (err) => {
-      console.error("❌ Redis error:", err.message);
+      logger.error("Redis error", { error: err.message });
     });
   } else {
-    console.warn("⚠️ REDIS_URL is not configured!")
+    logger.warn("REDIS_URL is not configured: caching disabled")
   } 
 } catch (err) {
-  console.error("❌ Redis init failed:", err.message);
+  logger.error("Redis init failed", { error: err.message });
 }
 }
 

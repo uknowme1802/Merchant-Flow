@@ -2,6 +2,8 @@ const crypto = require("crypto");
 const Webhook = require("../models/Webhook");
 const WebhookDelivery = require("../models/WebhookDelivery");
 const { webhookDeliveries } = require("./metrics");
+const { assertPublicUrl } = require("./ssrf");
+const logger = require("./logger");
 
 const TIMEOUT_MS = Number(process.env.WEBHOOK_TIMEOUT_MS) || 5000;
 
@@ -33,6 +35,8 @@ const sendRequest = async (webhook, event, payload) => {
     const timeout = setTimeout(() => controller.abort(), TIMEOUT_MS);
 
     try {
+        await assertPublicUrl(webhook.url);
+
         const res = await fetch(webhook.url, {
             method: "POST",
             headers: {
@@ -41,6 +45,8 @@ const sendRequest = async (webhook, event, payload) => {
                 "X-Webhook-Event": event
             },
             body,
+            // Never follow redirects: a public URL could redirect to an internal address
+            redirect: "manual",
             signal: controller.signal
         });
 
@@ -77,7 +83,7 @@ const deliverToWebhook = async (webhook, event, payload) => {
             nextRetryAt: success ? null : nextRetryDate(1)
         });
     } catch (logErr) {
-        console.warn("⚠️ Warning: Could not record webhook delivery:", logErr.message);
+        logger.warn("Could not record webhook delivery", { error: logErr.message });
     }
 };
 
@@ -93,7 +99,7 @@ const triggerWebhooks = async (event, payload) => {
             webhooks.map((webhook) => deliverToWebhook(webhook, event, payload))
         );
     } catch (err) {
-        console.warn("⚠️ Warning! triggerWebhook failed:", err.message);
+        logger.warn("triggerWebhooks failed", { event, error: err.message });
     }
 };
 
@@ -140,7 +146,7 @@ const processDueRetries = async (batchSize = 20) => {
 
             await resendDelivery(delivery, webhook);
         } catch (err) {
-            console.warn("⚠️ Warning: webhook retry failed:", err.message);
+            logger.warn("Webhook retry failed", { deliveryId: String(delivery._id), error: err.message });
         }
     }
 
@@ -156,7 +162,7 @@ const startRetryWorker = () => {
         try {
             await processDueRetries();
         } catch (err) {
-            console.warn("⚠️ Warning: retry worker tick failed:", err.message);
+            logger.warn("Webhook retry worker tick failed", { error: err.message });
         } finally {
             running = false;
         }

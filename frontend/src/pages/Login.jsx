@@ -24,7 +24,7 @@ export default function Login(){
     email: res.data.user.email,
     role: res.data.user.role
   };
-  login(userData, res.data.accessToken)
+  login(userData, res.data.accessToken, res.data.refreshToken)
   toast.success("Login Successfull!")
   navigate("/dashboard");
  }

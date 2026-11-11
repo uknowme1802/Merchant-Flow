@@ -26,13 +26,24 @@ export const AuthProvider = ({ children }) => {
     }
   }, []);
 
-  const login = (userData, token) => {
+  const login = (userData, token, refreshToken) => {
     localStorage.setItem("user", JSON.stringify(userData));
     localStorage.setItem("token", token);
+    if (refreshToken) localStorage.setItem("refreshToken", refreshToken);
     setUser(userData);
   };
 
   const logout = () => {
+    // Revoke the refresh token on the server (best effort), then clear local state
+    const refreshToken = localStorage.getItem("refreshToken");
+    if (refreshToken) {
+      fetch(`${import.meta.env.VITE_API_URL}/auth/logout`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token: refreshToken }),
+        keepalive: true,
+      }).catch(() => {});
+    }
     localStorage.clear();
     setUser(null);
     window.location.href = "/";

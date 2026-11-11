@@ -4,6 +4,7 @@ const router= express.Router();
 const mongoose = require("mongoose");
 
 const redis = require("../config/redis");
+const logger = require("../utils/logger");
 
 //Health check
 router.get("/", (req,res)=>{
@@ -30,7 +31,7 @@ router.get("/ready", async (req,res) =>{
             redisStatus = "connected"
         }
     } catch (err){
-        console.error("Redis Connection Error:",err.message)
+        logger.warn("Readiness: Redis ping failed", { error: err.message })
     }
 
     const isReady = mongoStatus === "connected" && redisStatus === "connected";
