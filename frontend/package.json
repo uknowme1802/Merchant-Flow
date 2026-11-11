@@ -11,7 +11,7 @@
     "start" : "node server.js"
   },
   "dependencies": {
-    "@reduxjs/toolkit": "^2.11.2",
+    "@reduxjs/toolkit": "^2.14.0",
     "axios": "^1.13.6",
     "lucide-react": "^0.577.0",
     "papaparse": "^5.5.3",
