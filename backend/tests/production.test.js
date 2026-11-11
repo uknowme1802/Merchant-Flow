@@ -90,9 +90,18 @@ describe("startup configuration", () => {
     });
 
     test("in production it also warns about a public /metrics and missing Redis", () => {
-        const warnings = validateEnv({ ...good, NODE_ENV: "production" });
+        const warnings = validateEnv({ ...good, NODE_ENV: "production", CREDENTIAL_ENC_KEY: "ab".repeat(32) });
         expect(warnings.join(" ")).toMatch(/METRICS_TOKEN/);
         expect(warnings.join(" ")).toMatch(/REDIS_URL/);
+    });
+
+    test("in production it refuses to start without a valid CREDENTIAL_ENC_KEY", () => {
+        expect(() => validateEnv({ ...good, NODE_ENV: "production" })).toThrow(/CREDENTIAL_ENC_KEY/);
+        expect(() => validateEnv({ ...good, NODE_ENV: "production", CREDENTIAL_ENC_KEY: "tooshort" })).toThrow(/CREDENTIAL_ENC_KEY/);
+    });
+
+    test("outside production the key is not required to boot", () => {
+        expect(() => validateEnv(good)).not.toThrow();
     });
 });
 
