@@ -2,34 +2,23 @@ const crypto = require("crypto");
 const qrcode = require("qrcode");
 const Transaction = require("../models/Transaction");
 const ValidPayment = require("../models/ValidPayment");
-const redis = require("../config/redis");
 const { getIO } = require("../socket");
 const { triggerWebhooks } = require("../utils/webhookDispatcher");
 const { paymentVerifications } = require("../utils/metrics");
+const { clearTransactionCache } = require("../utils/cache");
+const logger = require("../utils/logger");
 
 const UPI_ID = process.env.UPI_ID || "merchantflow@upi";
 const UPI_NAME = process.env.UPI_NAME || "MerchantFlow";
 const IDEMPOTENCY_KEY_REGEX = /^[A-Za-z0-9_\-:.]{1,128}$/;
 
 if(!process.env.UPI_ID){
-    console.warn("⚠️ UPI_ID is not configured! Falling back to a placeholde UPI ID for QR codes.")
+    logger.warn("UPI_ID is not configured: using a placeholder payee in QR codes")
 }
 
 const buildUpiQr = async (txn) => {
     const upiLink = `upi://pay?pa=${encodeURIComponent(UPI_ID)}&pn=${encodeURIComponent(UPI_NAME)}&am=${txn.amount}&cu=INR&tn=${encodeURIComponent(txn.id)}`;
     return qrcode.toDataURL(upiLink);
-};
-
-const clearTransactionCache = async () => {
-    if(!redis) return;
-    try{
-        const keys = await redis.keys("transactions:*");
-        if(keys && keys.length>0){
-            await redis.del(...keys);
-        }
-    } catch (cacheErr){
-        console.warn("⚠️ Warning: Could not clear cache:", cacheErr.message);
-    }
 };
 
 exports.createCheckout = async (req, res, next) => {
@@ -236,7 +225,7 @@ exports.verifyPayment = async (req, res, next) => {
             const io = getIO();
             io.emit("newTransaction", updated);
         } catch (socketErr){
-            console.warn("❗Warning: Could not emit newTransaction event:", socketErr.message)
+            logger.warn("Could not emit newTransaction event", { error: socketErr.message })
         }
 
         triggerWebhooks("payment.success", {

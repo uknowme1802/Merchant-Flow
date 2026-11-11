@@ -7,7 +7,9 @@ const DAY_NAMES = ["sun","mon","tue","wed","thr","fri","sat"];
 
 exports.getDashboardStats = async (req,res)=>{
     try{
-        const transactions = await Transaction.find();
+        // Admins see everything; everyone else only their own orders
+        const filter = req.user.role === "admin" ? {} : { userId: req.user.id };
+        const transactions = await Transaction.find(filter);
         // Sum in integer minor units (paise) so totals have no floating-point drift
         const totalRevenue = fromMinor(transactions.reduce(
             (sum,tx) => sum+toMinor(tx.amount),

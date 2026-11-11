@@ -1,4 +1,5 @@
 const jwt = require("jsonwebtoken");
+const logger = require("../utils/logger");
 require('dotenv').config();
 const SECRET = process.env.SECRET;
 
@@ -15,7 +16,7 @@ module.exports = (req,res, next) =>{
     const token = authHeader.split(" ")[1];
 
     if(!SECRET){
-        console.error("Secret is missing");
+        logger.error("SECRET is not configured");
         return res.status(500).json({
             success: false,
             message: "Server Configuration error"
@@ -25,7 +26,7 @@ module.exports = (req,res, next) =>{
         req.user = decoded;
         next();
     } catch(err){
-        console.log("JWT error", err.message)
+        logger.debug("JWT rejected", { requestId: req.id, reason: err.message })
         return res.status(401).json({
             success: false,
             message:"Invalid Token or expired"

@@ -1,18 +1,20 @@
 const {Server} = require("socket.io");
+const { allowedOrigins } = require("./config/origins");
+const logger = require("./utils/logger");
 let io;
 
 const initSocket = (server) =>{
     io = new Server(server , {
         cors: {
-            origin: ["https://merchant-flow-one.vercel.app", "http://localhost:5173"],
+            origin: allowedOrigins(),
             methods: ["GET", "POST"]
         }
     })
     io.on("connection", (socket)=>{
-        console.log("⚡ Client connected:", socket.id);
+        logger.debug("Socket client connected", { id: socket.id });
         
-        socket.on("disconnected",()=>{
-            console.log("❌ Client disconnected", socket.id);
+        socket.on("disconnect",()=>{
+            logger.debug("Socket client disconnected", { id: socket.id });
         })
     })
 };

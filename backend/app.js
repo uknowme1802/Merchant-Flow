@@ -8,6 +8,8 @@ const YAML = require("yaml");
 const fs = require("fs");
 const path = require("path");
 const { metricsMiddleware, metricsHandler } = require("./utils/metrics");
+const { requestId, accessLog } = require("./middleware/requestContext");
+const { allowedOrigins } = require("./config/origins");
 
 const rateLimiter = require("./middleware/rateLimiter");
 const errorMiddleware = require("./middleware/errorMiddleware");
@@ -24,16 +26,19 @@ const WebhookRoutes = require("./routes/webhookRoutes");
 
 const app = express();
 
-app.use(helmet());
-app.use(metricsMiddleware);
-app.use(express.json());
+// Behind a reverse proxy (Render, nginx) the client IP comes from X-Forwarded-For. Without this
+// the rate limiter sees the proxy's IP for everyone, so one user could lock out all the others.
+app.set("trust proxy", Number(process.env.TRUST_PROXY ?? 1));
 
-app.use(cors({
-    origin: [
-        "https://merchant-flow-one.vercel.app",
-        "http://localhost:5173"
-    ]
-}))
+app.use(helmet());
+app.use(requestId);
+app.use(metricsMiddleware);
+if(process.env.NODE_ENV !== "test"){
+    app.use(accessLog);
+}
+app.use(express.json({ limit: "100kb" }));
+
+app.use(cors({ origin: allowedOrigins() }));
 
 app.get("/metrics", metricsHandler);
 
@@ -57,6 +62,10 @@ app.use("/api/Webhooks", WebhookRoutes);
 app.get("/", (req,res)=>{
     res.send("API Running...");
 })
+
+app.use((req, res) => {
+    res.status(404).json({ success: false, message: "Route not found", requestId: req.id });
+});
 
 app.use(errorMiddleware);
 module.exports = app;

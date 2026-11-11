@@ -1,6 +1,7 @@
 const Webhook = require("../models/Webhook");
 const WebhookDelivery = require("../models/WebhookDelivery");
 const { replayDelivery } = require("../utils/webhookDispatcher");
+const { assertPublicUrl } = require("../utils/ssrf");
 
 exports.createWebhook = async ( req, res, next ) => {
     try {
@@ -20,6 +21,12 @@ exports.createWebhook = async ( req, res, next ) => {
                 success: false,
                 message: "URL must a valid absolute URL"
             });
+        }
+
+        try {
+            await assertPublicUrl(url);
+        } catch (urlErr) {
+            return res.status(urlErr.status || 400).json({ success: false, message: urlErr.message });
         }
 
         let eventList = Webhook.EVENTS;

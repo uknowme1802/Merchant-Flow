@@ -1,24 +1,22 @@
-# Use Node LTS
-FROM node:18-alpine
+# Node 20 LTS (matches CI)
+FROM node:20-alpine
 
-# Set working directory
+ENV NODE_ENV=production
+
 WORKDIR /app
 
-# Copy package files
+# Install production dependencies only (reproducible, smaller image)
 COPY package*.json ./
+RUN npm ci --omit=dev && npm cache clean --force
 
-# Install dependencies
-RUN npm install
+# Copy the application and run as the unprivileged "node" user, not root
+COPY --chown=node:node . .
+USER node
 
-# Copy full project
-COPY . .
-
-# Expose port
 EXPOSE 5000
 
-#Health Check
+# Readiness check: fails if MongoDB or Redis is unreachable
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
     CMD wget --no-verbose --tries=1 --spider http://localhost:5000/health/ready || exit 1
 
-# Start app
 CMD ["node", "server.js"]
