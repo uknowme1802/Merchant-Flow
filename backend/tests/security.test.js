@@ -95,3 +95,14 @@ describe("transaction visibility and paging", () => {
         expect(Transaction.find).toHaveBeenLastCalledWith({});
     });
 });
+
+describe("malformed order ids", () => {
+    test("checkout routes answer 400, not 500, for an id that is not an ObjectId", async () => {
+        const auth = `Bearer ${token("user-7")}`;
+        const status = await request(app).get("/api/checkout/TXN-not-an-object-id").set("Authorization", auth);
+        const verify = await request(app).post("/api/checkout/TXN-not-an-object-id/verify")
+            .set("Authorization", auth).send({ utr: "123456789012" });
+        expect(status.status).toBe(400);
+        expect(verify.status).toBe(400);
+    });
+});

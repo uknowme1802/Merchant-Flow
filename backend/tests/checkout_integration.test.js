@@ -42,7 +42,7 @@ describe("Checkout flow (QR generation + 12-digits UTR verification",()=> {
         test("verify rejects the utr that isn't exactly 12 digits", async () => {
             const token = buildAccessToken("user-1")
             const res = await request(app)
-                .post("/api/checkout/order-2/verify")
+                .post("/api/checkout/000000000000000000000001/verify")
                 .set("Authorization", `Bearer ${token}`)
                 .send({utr: "12345"})
 
@@ -75,7 +75,7 @@ describe("Checkout flow (QR generation + 12-digits UTR verification",()=> {
             const token = buildAccessToken("user-1");
 
             const res = await request(app)
-                .post("/api/checkout/order-3/verify")
+                .post("/api/checkout/000000000000000000000002/verify")
                 .set("Authorization", `Bearer ${token}`)
                 .send({utr: "968574859685"});
 
@@ -107,7 +107,7 @@ describe("Checkout flow (QR generation + 12-digits UTR verification",()=> {
             const token = buildAccessToken("user-1")
 
             const res = await request(app)
-                .post("/api/checkout/order-4/verify")
+                .post("/api/checkout/000000000000000000000003/verify")
                 .set("Authorization", `Bearer ${token}`)
                 .send({utr: "000000000000"});
 
@@ -150,7 +150,7 @@ describe("Checkout-already-used UTR gets a distinct message", ()=>{
         const token = buildAccessToken("user-1");
 
         const res = await request(app)
-            .post("/api/checkout/order-used/verify")
+            .post("/api/checkout/000000000000000000000004/verify")
             .set("Authorization", `Bearer ${token}`)
             .send({utr: "968574859685"});
 
@@ -183,7 +183,7 @@ describe("Checkout-already-used UTR gets a distinct message", ()=>{
         const adminToken = buildAccessToken("admin-1","admin");
 
         const res = await request(app)
-            .post("/api/checkout/order-admin-check/verify")
+            .post("/api/checkout/000000000000000000000005/verify")
             .set("Authorization", `Bearer ${adminToken}`)
             .send({utr: "968574859685"});
 
@@ -249,7 +249,7 @@ describe("Checkout - Webhook triggers", () => {
         const token = buildAccessToken("user-1");
 
         await request(app)
-            .post("/api/checkout/order-webhook-2/verify")
+            .post("/api/checkout/000000000000000000000006/verify")
             .set("Authorization", `Bearer ${token}`)
             .send({ utr: "968574859685"});
 
@@ -278,7 +278,7 @@ describe("Checkout - Webhook triggers", () => {
         const token = buildAccessToken("user-1");
 
         await request(app)
-            .post("/api/checkout/order-webhook-3/verify")
+            .post("/api/checkout/000000000000000000000007/verify")
             .set("Authorization", `Bearer ${token}`)
             .send({ utr: "000000000000"});
 

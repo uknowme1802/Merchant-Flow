@@ -27,6 +27,9 @@ tags:
   - name: Users
   - name: Payment Codes
   - name: Webhooks
+  - name: Merchant
+  - name: Merchant Admin
+  - name: Merchant API
   - name: Ops
 security:
   - bearerAuth: []
@@ -305,7 +308,7 @@ paths:
               properties:
                 email: { type: string, format: email }
                 password: { type: string, format: password }
-                role: { type: string, enum: [admin, user] }
+                role: { type: string, enum: [admin, user, merchant] }
       responses:
         "201": { description: Created }
         "409": { description: Email already in use }
@@ -417,6 +420,190 @@ paths:
         - { name: limit, in: query, schema: { type: integer, default: 20, maximum: 100 } }
       responses:
         "200": { description: Paginated delivery logs }
+  /api/merchant/signup:
+    post:
+      tags: [Merchant]
+      summary: Register a merchant (status starts as pending) and its owner login
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [businessName, businessType, country, contactName, contactPhone, email, password, kyc]
+              properties:
+                businessName: { type: string }
+                businessType: { type: string, enum: [sole_proprietor, company, non_profit, other] }
+                website: { type: string }
+                country: { type: string, example: IN }
+                contactName: { type: string }
+                contactPhone: { type: string }
+                email: { type: string }
+                password: { type: string, minLength: 8 }
+                kyc:
+                  type: object
+                  required: [registrationNumber, address]
+                  properties:
+                    registrationNumber: { type: string }
+                    taxId: { type: string }
+                    address: { type: string }
+      responses:
+        "201": { description: "Created: merchant {mid, businessName, status}" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { description: Email already registered }
+  /api/merchant/me:
+    get:
+      tags: [Merchant]
+      summary: Current merchant, your team role and what you may do (sandbox/live)
+      responses:
+        "200": { description: Merchant profile and capabilities }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /api/merchant/credentials:
+    get:
+      tags: [Merchant]
+      summary: List API keys (metadata only, owner or developer)
+      responses:
+        "200": { description: Keys with keyHint, status, expiresAt, lastUsedAt }
+    post:
+      tags: [Merchant]
+      summary: Create the API key for an environment; the secret is shown once
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [environment]
+              properties:
+                environment: { type: string, enum: [sandbox, live] }
+      responses:
+        "201": { description: "mid, secret (once), credential" }
+        "403": { description: Live mode needs an approved merchant }
+        "409": { description: An active key already exists for this environment }
+  /api/merchant/credentials/{environment}/rotate:
+    post:
+      tags: [Merchant]
+      summary: Issue a new key; the old key keeps working for the grace period
+      parameters:
+        - { name: environment, in: path, required: true, schema: { type: string, enum: [sandbox, live] } }
+      responses:
+        "201": { description: New secret (once) and previousKeyExpiresAt }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/merchant/credentials/{id}:
+    delete:
+      tags: [Merchant]
+      summary: Revoke a key immediately
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200": { description: Revoked }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/merchant/team:
+    get:
+      tags: [Merchant]
+      summary: List team members (owner)
+      responses:
+        "200": { description: Members }
+    post:
+      tags: [Merchant]
+      summary: Add a developer or finance member (owner)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password, merchantRole]
+              properties:
+                email: { type: string }
+                password: { type: string }
+                merchantRole: { type: string, enum: [developer, finance] }
+      responses:
+        "201": { description: Member created }
+        "409": { description: Email already registered }
+  /api/merchant/team/{id}:
+    delete:
+      tags: [Merchant]
+      summary: Remove a team member (owner cannot be removed)
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200": { description: Removed }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/merchant/audit-logs:
+    get:
+      tags: [Merchant]
+      summary: Audit trail for your merchant (owner)
+      responses:
+        "200": { description: Paginated audit entries }
+  /api/admin/merchants:
+    get:
+      tags: [Merchant Admin]
+      summary: Review queue (admin)
+      parameters:
+        - { name: status, in: query, schema: { type: string, enum: [pending, active, suspended, rejected] } }
+        - { name: search, in: query, schema: { type: string } }
+        - { name: page, in: query, schema: { type: integer, default: 1 } }
+        - { name: limit, in: query, schema: { type: integer, default: 20 } }
+      responses:
+        "200": { description: Paginated merchants }
+  /api/admin/merchants/{id}:
+    get:
+      tags: [Merchant Admin]
+      summary: One merchant with KYC details and credential metadata (admin)
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200": { description: Merchant and credentials }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/admin/merchants/{id}/{action}:
+    post:
+      tags: [Merchant Admin]
+      summary: Approve, reject, suspend or reactivate (admin)
+      description: Reject and suspend require a `reason`. Transitions that do not fit the current status return 409.
+      parameters:
+        - $ref: "#/components/parameters/Id"
+        - { name: action, in: path, required: true, schema: { type: string, enum: [approve, reject, suspend, reactivate] } }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                reason: { type: string }
+      responses:
+        "200": { description: Updated merchant }
+        "409": { description: Not allowed from the current status }
+  /api/admin/merchants/{id}/credentials/{credentialId}:
+    delete:
+      tags: [Merchant Admin]
+      summary: Emergency revoke of a merchant key (admin)
+      parameters:
+        - $ref: "#/components/parameters/Id"
+        - { name: credentialId, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: Revoked }
+  /api/admin/audit-logs:
+    get:
+      tags: [Merchant Admin]
+      summary: Platform audit trail (admin)
+      responses:
+        "200": { description: Paginated audit entries }
+  /v1/whoami:
+    get:
+      tags: [Merchant API]
+      summary: Check that your signed requests work
+      security:
+        - merchantSignature: []
+      parameters:
+        - { name: X-MID, in: header, required: true, schema: { type: string } }
+        - { name: X-Timestamp, in: header, required: true, schema: { type: string } }
+      responses:
+        "200": { description: Your MID and environment }
+        "401": { description: Invalid credentials }
+        "403": { description: Merchant not active }
+        "429": { description: Per-merchant rate limit exceeded }
   /health:
     get:
       tags: [Ops]
@@ -449,6 +636,13 @@ components:
       type: http
       scheme: bearer
       bearerFormat: JWT
+    merchantSignature:
+      type: apiKey
+      in: header
+      name: X-Signature
+      description: |
+        Send `X-MID`, `X-Timestamp` (unix seconds, within 5 minutes) and `X-Signature` =
+        hex `HMAC_SHA256(secret, timestamp + "\n" + METHOD + "\n" + pathWithQuery + "\n" + sha256hex(rawBody))`.
   parameters:
     Id:
       name: id

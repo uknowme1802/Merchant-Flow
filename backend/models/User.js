@@ -15,8 +15,21 @@ const userSchema = new mongoose.Schema({
     },
     role: {
         type: String,
-        enum: ["admin", "user"],
+        enum: ["admin", "user", "merchant"],
         default: "user"
+    },
+    // Set only for role "merchant": which merchant this login belongs to, and the member's
+    // role inside that merchant's team (owner, developer, finance).
+    merchantId: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: "Merchant",
+        default: null,
+        index: true
+    },
+    merchantRole: {
+        type: String,
+        enum: ["owner", "developer", "finance"],
+        default: null
     },
     refreshToken: {
         type: String,

@@ -161,7 +161,7 @@ describe("Atomic UTR verification", () => {
         ValidPayment.findOneAndUpdate.mockResolvedValue(null);
         ValidPayment.findOne.mockResolvedValue({ used: true, usedBy: "o1" });
 
-        const res = await request(app).post("/api/checkout/o1/verify")
+        const res = await request(app).post("/api/checkout/000000000000000000000008/verify")
             .set("Authorization", `Bearer ${token("u1")}`).send({ utr: "123456789012" });
 
         expect(res.statusCode).toBe(200);
@@ -175,7 +175,7 @@ describe("Atomic UTR verification", () => {
         ValidPayment.findOneAndUpdate.mockResolvedValue(null);
         ValidPayment.findOne.mockResolvedValue({ used: true, usedBy: "o1" });
 
-        const res = await request(app).post("/api/checkout/o2/verify")
+        const res = await request(app).post("/api/checkout/000000000000000000000009/verify")
             .set("Authorization", `Bearer ${token("u1")}`).send({ utr: "123456789012" });
 
         expect(res.body.verified).toBe(false);
@@ -189,7 +189,7 @@ describe("Atomic UTR verification", () => {
         Transaction.findOneAndUpdate.mockRejectedValue(new Error("db down"));
         ValidPayment.updateOne.mockResolvedValue({});
 
-        const res = await request(app).post("/api/checkout/o3/verify")
+        const res = await request(app).post("/api/checkout/00000000000000000000000a/verify")
             .set("Authorization", `Bearer ${token("u1")}`).send({ utr: "123456789012" });
 
         expect(res.statusCode).toBe(500);

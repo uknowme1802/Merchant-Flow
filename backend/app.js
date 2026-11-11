@@ -23,6 +23,9 @@ const twoFactorRoutes  = require("./routes/twoFactorRoutes");
 const checkoutRoutes = require("./routes/checkoutRoutes");
 const ValidPaymentRoutes = require("./routes/validPaymentRoutes");
 const WebhookRoutes = require("./routes/webhookRoutes");
+const merchantRoutes = require("./routes/merchantRoutes");
+const adminMerchantRoutes = require("./routes/adminMerchantRoutes");
+const merchantApiRoutes = require("./routes/merchantApiRoutes");
 
 const app = express();
 
@@ -36,7 +39,9 @@ app.use(metricsMiddleware);
 if(process.env.NODE_ENV !== "test"){
     app.use(accessLog);
 }
-app.use(express.json({ limit: "100kb" }));
+// `verify` keeps the exact bytes of the request body in req.rawBody. The merchant API signature
+// is computed over those bytes, so it cannot be checked against the parsed JSON.
+app.use(express.json({ limit: "100kb", verify: (req, res, buf) => { req.rawBody = buf; } }));
 
 app.use(cors({ origin: allowedOrigins() }));
 
@@ -47,9 +52,15 @@ const openApiSpec = YAML.parse(fs.readFileSync(path.join(__dirname, "docs", "ope
 app.get("/api-docs.json", (req, res) => res.json(openApiSpec));
 app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(openApiSpec));
 
+// The signed merchant API sits BEFORE the global per-IP limiter: it has its own per-MID limit,
+// and a merchant's servers should not be throttled together with everyone behind the same IP.
+app.use("/v1", merchantApiRoutes);
+
 app.use(rateLimiter);
 
 app.use("/api/auth", authRoutes);
+app.use("/api/merchant", merchantRoutes);
+app.use("/api/admin", adminMerchantRoutes);
 app.use("/api/dashboard", dashboardRoutes);
 app.use("/api/transactions", transactionRoutes);
 app.use("/api/users", userRoutes);
