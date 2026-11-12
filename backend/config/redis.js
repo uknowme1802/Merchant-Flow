@@ -10,12 +10,14 @@ try {
       tls: process.env.REDIS_URL.startsWith("rediss://") ? {} : undefined,
       maxRetriesPerRequest: 3,
 
+      // Never give up: a managed Redis (Upstash) can be briefly unreachable at boot or restart, and
+      // a client that stops retrying stays dead until the whole server is restarted. Requests fail
+      // fast (maxRetriesPerRequest) and the cache is optional, so retrying costs nothing.
       retryStrategy: (times)=>{
-        if(times>3){
-          logger.error("Redis retry limit reached");
-          return null;
+        if(times === 1 || times % 10 === 0){
+          logger.warn("Redis unreachable, retrying", { attempt: times });
         }
-        return Math.min(times*500, 2000);
+        return Math.min(times*500, 10000);
       }
     });
 
