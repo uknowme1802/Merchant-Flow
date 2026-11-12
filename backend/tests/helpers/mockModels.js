@@ -30,6 +30,22 @@ const MerchantCredential = createFakeModel("MerchantCredential", {
 
 const AuditLog = createFakeModel("AuditLog");
 
-const resetAll = () => [Merchant, User, MerchantCredential, AuditLog].forEach((m) => m.__reset());
+// Same rules as the real indexes: a bank id and an (account number, IFSC) pair are unique.
+const BankAccount = createFakeModel("BankAccount", {
+    uniques: [(a, b) => a.bankId === b.bankId || (a.accountNumber === b.accountNumber && a.ifsc === b.ifsc)],
+    defaults: () => ({
+        methods: ["UPI"], qrEnabled: true, level: "Level1", status: "active", verified: false,
+        minPaise: null, maxPaise: null, dailyLimitPaise: null
+    })
+});
 
-module.exports = { Merchant, User, MerchantCredential, AuditLog, resetAll };
+// One mapping per merchant and bank.
+const MerchantBankMapping = createFakeModel("MerchantBankMapping", {
+    uniques: [(a, b) => String(a.merchantId) === String(b.merchantId) && String(a.bankId) === String(b.bankId)],
+    defaults: () => ({ active: true, minPaise: null, maxPaise: null, dailyLimitPaise: null })
+});
+
+const resetAll = () => [Merchant, User, MerchantCredential, AuditLog, BankAccount, MerchantBankMapping]
+    .forEach((m) => m.__reset());
+
+module.exports = { Merchant, User, MerchantCredential, AuditLog, BankAccount, MerchantBankMapping, resetAll };

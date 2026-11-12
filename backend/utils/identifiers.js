@@ -21,6 +21,15 @@ const generateSecret = (environment) => {
     return prefix + crypto.randomBytes(32).toString("base64url");
 };
 
+// Public bank account id, for example "bank_k3x9f2ab".
+const generateBankId = () => {
+    let id = "";
+    for (let i = 0; i < 8; i++) {
+        id += MID_ALPHABET[crypto.randomInt(MID_ALPHABET.length)];
+    }
+    return `bank_${id}`;
+};
+
 const lastFour = (secret) => String(secret).slice(-4);
 
-module.exports = { generateMid, generateSecret, lastFour, MID_ALPHABET, MID_LENGTH };
+module.exports = { generateMid, generateBankId, generateSecret, lastFour, MID_ALPHABET, MID_LENGTH };
