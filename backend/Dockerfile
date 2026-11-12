@@ -1,5 +1,5 @@
 # Node 20 LTS (matches CI)
-FROM node:24-alpine
+FROM node:25-alpine
 
 ENV NODE_ENV=production
 
