@@ -25,6 +25,7 @@ const ValidPaymentRoutes = require("./routes/validPaymentRoutes");
 const WebhookRoutes = require("./routes/webhookRoutes");
 const merchantRoutes = require("./routes/merchantRoutes");
 const adminMerchantRoutes = require("./routes/adminMerchantRoutes");
+const adminBankRoutes = require("./routes/adminBankRoutes");
 const merchantApiRoutes = require("./routes/merchantApiRoutes");
 
 const app = express();
@@ -61,6 +62,7 @@ app.use(rateLimiter);
 app.use("/api/auth", authRoutes);
 app.use("/api/merchant", merchantRoutes);
 app.use("/api/admin", adminMerchantRoutes);
+app.use("/api/admin", adminBankRoutes);
 app.use("/api/dashboard", dashboardRoutes);
 app.use("/api/transactions", transactionRoutes);
 app.use("/api/users", userRoutes);

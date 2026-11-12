@@ -2,6 +2,33 @@ const Joi = require("joi");
 const WEBHOOK_EVENTS = require("../constants/webhookEvents");
 const { hasAtMostTwoDecimals } = require("../utils/money");
 const { BUSINESS_TYPES, ENVIRONMENTS, MERCHANT_STATUS } = require("../constants/merchant");
+const { IFSC_REGEX, ACCOUNT_NUMBER_REGEX, UPI_ID_REGEX, BANK_STATUS, BANK_METHODS } = require("../constants/bank");
+
+const paise = Joi.number().integer().min(0).max(100000000000);
+const objectId = Joi.string().pattern(/^[a-fA-F0-9]{24}$/);
+
+const bankFields = {
+    holderName: Joi.string().trim().min(2).max(120),
+    bankName: Joi.string().trim().min(2).max(120),
+    accountNumber: Joi.string().trim().pattern(ACCOUNT_NUMBER_REGEX)
+        .messages({ "string.pattern.base": "accountNumber must be 9 to 18 digits" }),
+    ifsc: Joi.string().trim().uppercase().pattern(IFSC_REGEX)
+        .messages({ "string.pattern.base": "ifsc must look like YESB0000001" }),
+    upiId: Joi.string().trim().pattern(UPI_ID_REGEX)
+        .messages({ "string.pattern.base": "upiId must look like name@bank" }),
+    minPaise: paise.allow(null),
+    maxPaise: paise.allow(null),
+    dailyLimitPaise: paise.allow(null),
+    methods: Joi.array().items(Joi.string().valid(...BANK_METHODS)).min(1).unique(),
+    qrEnabled: Joi.boolean(),
+    level: Joi.string().trim().max(30),
+    status: Joi.string().valid(...BANK_STATUS)
+};
+
+const bankBody = (required) => Joi.object(Object.fromEntries(
+    Object.entries(bankFields).map(([k, v]) => [k, required.includes(k) ? v.required() : v.optional()])
+)).custom((v, helpers) => (v.minPaise != null && v.maxPaise != null && v.minPaise > v.maxPaise
+    ? helpers.message("minPaise cannot be above maxPaise") : v));
 
 const AMOUNT_MESSAGE = "A valid amount greater than 0 with at most 2 decimal places is required!";
 const UTR_MESSAGE = "UTR must be exactly 12 digits!";
@@ -106,6 +133,23 @@ module.exports = {
         search: Joi.string().trim().max(100).optional(),
         page: Joi.number().integer().min(1).default(1),
         limit: Joi.number().integer().min(1).max(100).default(20)
+    }),
+
+    createBank: bankBody(["holderName", "bankName", "accountNumber", "ifsc", "upiId"]),
+    updateBank: bankBody([]).min(1),
+
+    bankListQuery: Joi.object({
+        search: Joi.string().trim().max(100).optional(),
+        status: Joi.string().valid(...BANK_STATUS).optional(),
+        page: Joi.number().integer().min(1).default(1),
+        limit: Joi.number().integer().min(1).max(100).default(20)
+    }),
+
+    addBankMapping: Joi.object({
+        bankId: objectId.required(),
+        minPaise: paise.allow(null).optional(),
+        maxPaise: paise.allow(null).optional(),
+        dailyLimitPaise: paise.allow(null).optional()
     }),
 
     auditQuery: Joi.object({
