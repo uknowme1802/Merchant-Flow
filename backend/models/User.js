@@ -8,10 +8,23 @@ const userSchema = new mongoose.Schema({
         lowercase:true,
         trim: true
     },
+    // Optional login name (lower case letters, digits and underscore). Login accepts it in place of
+    // the email. Unique, but only among users that have one.
+    username: {
+        type: String,
+        lowercase: true,
+        trim: true,
+        default: undefined
+    },
     password: {
         type: String,
         required: true,
         select: false
+    },
+    // Set when an admin issues a temporary password; the user must choose a new one at next login.
+    mustChangePassword: {
+        type: Boolean,
+        default: false
     },
     role: {
         type: String,
@@ -53,5 +66,10 @@ const userSchema = new mongoose.Schema({
         }
     }
 }, {timestamps:true});
+
+userSchema.index(
+    { username: 1 },
+    { unique: true, partialFilterExpression: { username: { $type: "string" } } }
+);
 
 module.exports = mongoose.model("User", userSchema);

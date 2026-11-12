@@ -24,6 +24,7 @@ const matchesCondition = (value, condition) => {
         return Object.entries(condition).every(([op, expected]) => {
             if (op === "$ne") return !equal(value, expected);
             if (op === "$gt") return value != null && value > expected;
+            if (op === "$in") return expected.some((candidate) => value != null && equal(value, candidate));
             throw new Error(`fakeModels: unsupported operator ${op}`);
         });
     }
@@ -54,6 +55,11 @@ class FakeQuery {
     select() { return this; }
     then(resolve, reject) { return Promise.resolve(this.items).then(resolve, reject); }
 }
+
+const single = (lookup) => ({
+    select() { return this; },
+    then(resolve, reject) { return Promise.resolve().then(lookup).then(resolve, reject); }
+});
 
 const duplicateKeyError = () => Object.assign(new Error("E11000 duplicate key error"), { code: 11000 });
 
@@ -87,8 +93,9 @@ const createFakeModel = (name, { uniques = [], defaults = () => ({}), finalize =
             return stored;
         },
         find: (filter) => new FakeQuery(docs.filter((d) => matches(d, filter))),
-        findOne: (filter) => new FakeQuery(docs.filter((d) => matches(d, filter)).slice(0, 1)).then((r) => r[0] || null),
-        findById: async (id) => docs.find((d) => equal(d._id, id)) || null,
+        // A single-document lookup can be awaited directly or chained with select(), like Mongoose.
+        findOne: (filter) => single(() => docs.find((d) => matches(d, filter)) || null),
+        findById: (id) => single(() => docs.find((d) => equal(d._id, id)) || null),
         countDocuments: async (filter) => docs.filter((d) => matches(d, filter)).length,
         exists: async (filter) => (docs.some((d) => matches(d, filter)) ? { _id: "x" } : null),
         updateOne: async (filter, update) => {

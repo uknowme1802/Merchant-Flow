@@ -30,6 +30,27 @@ const generateBankId = () => {
     return `bank_${id}`;
 };
 
+// One-time temporary password for admin-created accounts and resets: 16 characters, no look-alike
+// letters, always containing an upper case letter, a lower case letter and a digit.
+const TEMP_UPPER = "ABCDEFGHJKMNPQRSTUVWXYZ";
+const TEMP_LOWER = "abcdefghjkmnpqrstuvwxyz";
+const TEMP_DIGIT = "23456789";
+const generateTempPassword = () => {
+    const all = TEMP_UPPER + TEMP_LOWER + TEMP_DIGIT;
+    const chars = [
+        TEMP_UPPER[crypto.randomInt(TEMP_UPPER.length)],
+        TEMP_LOWER[crypto.randomInt(TEMP_LOWER.length)],
+        TEMP_DIGIT[crypto.randomInt(TEMP_DIGIT.length)]
+    ];
+    while (chars.length < 16) chars.push(all[crypto.randomInt(all.length)]);
+    // Fisher-Yates shuffle so the required characters are not always first.
+    for (let i = chars.length - 1; i > 0; i--) {
+        const j = crypto.randomInt(i + 1);
+        [chars[i], chars[j]] = [chars[j], chars[i]];
+    }
+    return chars.join("");
+};
+
 const lastFour = (secret) => String(secret).slice(-4);
 
-module.exports = { generateMid, generateBankId, generateSecret, lastFour, MID_ALPHABET, MID_LENGTH };
+module.exports = { generateMid, generateBankId, generateTempPassword, generateSecret, lastFour, MID_ALPHABET, MID_LENGTH };
