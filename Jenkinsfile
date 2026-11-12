@@ -1,7 +1,7 @@
 // Jenkins pipeline mirroring .github/workflows (backend + frontend CI)
 pipeline {
   agent any
-  tools { nodejs 'node-20' }
+  tools { nodejs 'node-24' }
   stages {
     stage('Backend: install & test') {
       steps { dir('backend') { sh 'npm ci && npm test' } }
