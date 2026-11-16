@@ -14,6 +14,8 @@ const { Merchant, User, AuditLog, MerchantCredential, resetAll } = require("./he
 const { registerMerchant, approve, adminToken, userToken } = require("./helpers/merchantFlow");
 const { generateTempPassword } = require("../utils/identifiers");
 
+// The key tests encrypt secrets. CI has no .env file, so the test supplies its own key.
+beforeAll(() => { process.env.CREDENTIAL_ENC_KEY = "c".repeat(64); });
 beforeEach(() => resetAll());
 afterEach(() => jest.restoreAllMocks());
 
