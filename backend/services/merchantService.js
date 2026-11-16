@@ -2,19 +2,28 @@ const bcrypt = require("bcryptjs");
 const Merchant = require("../models/Merchant");
 const User = require("../models/User");
 const ApiError = require("../utils/ApiError");
-const { generateMid } = require("../utils/identifiers");
-const { MERCHANT_ACTIONS } = require("../constants/merchant");
+const { generateMid, generateTempPassword } = require("../utils/identifiers");
+const credentialService = require("./credentialService");
+const { MERCHANT_ACTIONS, MODE_ENVIRONMENT, DEFAULT_MERCHANT_CONFIG } = require("../constants/merchant");
 
 const MAX_MID_ATTEMPTS = 5;
 const BCRYPT_ROUNDS = 10;
 
 // Merchant sign-up creates two records: the Merchant (status "pending") and its first login, the
 // team owner. If the second step fails the first is removed, so no orphan merchant is left behind.
-const signupMerchant = async ({ businessName, businessType, website, country, contactName, contactPhone, email, password, kyc }) => {
+//
+// An admin can also create a merchant directly (createMerchantByAdmin below). That path passes
+// `admin`, which starts the merchant already approved, and `username`, `mode` and
+// `mustChangePassword` for the new login.
+const signupMerchant = async ({ businessName, businessType, website, country, contactName, contactPhone, email, password, kyc, username, mode, remark, mustChangePassword, admin }) => {
     const normalisedEmail = email.toLowerCase();
+    const normalisedUsername = username ? username.toLowerCase() : undefined;
 
     if (await User.exists({ email: normalisedEmail })) {
         throw new ApiError(409, "Email already in use");
+    }
+    if (normalisedUsername && await User.exists({ username: normalisedUsername })) {
+        throw new ApiError(409, "Username already in use");
     }
 
     let merchant = null;
@@ -32,8 +41,12 @@ const signupMerchant = async ({ businessName, businessType, website, country, co
                 kyc: {
                     registrationNumber: kyc.registrationNumber,
                     taxId: kyc.taxId || null,
-                    address: kyc.address
-                }
+                    address: kyc.address,
+                    ...(admin ? { status: "approved", reviewNote: "Created by an administrator" } : {})
+                },
+                ...(mode ? { mode } : {}),
+                ...(remark ? { remark } : {}),
+                ...(admin ? { status: "active", statusChangedAt: new Date(), statusChangedBy: admin } : {})
             });
         } catch (err) {
             // A MID collision is astronomically unlikely, but cheap to handle: try a new one.
@@ -46,6 +59,8 @@ const signupMerchant = async ({ businessName, businessType, website, country, co
         const user = await User.create({
             email: normalisedEmail,
             password: await bcrypt.hash(password, BCRYPT_ROUNDS),
+            ...(normalisedUsername ? { username: normalisedUsername } : {}),
+            ...(mustChangePassword ? { mustChangePassword: true } : {}),
             role: "merchant",
             merchantId: merchant._id,
             merchantRole: "owner"
@@ -53,7 +68,10 @@ const signupMerchant = async ({ businessName, businessType, website, country, co
         return { merchant, user };
     } catch (err) {
         await Merchant.deleteOne({ _id: merchant._id });
-        if (err.code === 11000) throw new ApiError(409, "Email already in use");
+        if (err.code === 11000) {
+            const clash = normalisedUsername && await User.exists({ username: normalisedUsername });
+            throw new ApiError(409, clash ? "Username already in use" : "Email already in use");
+        }
         throw err;
     }
 };
@@ -94,13 +112,24 @@ const listMerchants = async ({ status, search, page = 1, limit = 20 }) => {
     if (search) {
         // Escape the text so it is matched literally, never interpreted as a regular expression.
         const pattern = new RegExp(search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
-        query.$or = [{ businessName: pattern }, { contactEmail: pattern }, { mid: pattern }];
+        query.$or = [{ businessName: pattern }, { contactEmail: pattern }, { mid: pattern }, { remark: pattern }];
+
+        // The username lives on the owner's login, so find those logins first.
+        const byUsername = await User.find({ role: "merchant", merchantRole: "owner", username: pattern });
+        if (byUsername.length) query.$or.push({ _id: { $in: byUsername.map((u) => u.merchantId) } });
     }
 
     const [data, total] = await Promise.all([
         Merchant.find(query).sort({ createdAt: -1 }).skip((page - 1) * limit).limit(limit),
         Merchant.countDocuments(query)
     ]);
+
+    // One query for all the owners on this page (username and two-factor state for the list).
+    const owners = data.length
+        ? await User.find({ merchantRole: "owner", merchantId: { $in: data.map((m) => m._id) } })
+        : [];
+    const ownerByMerchant = new Map(owners.map((o) => [String(o.merchantId), o]));
+    data.forEach((m) => { m.owner = ownerByMerchant.get(String(m._id)) || null; });
 
     return { data, total, page, limit };
 };
@@ -146,6 +175,16 @@ const removeTeamMember = async ({ merchantId, userId }) => {
     return member;
 };
 
+const toConfigView = (config = {}) => ({
+    webhookAutoTrigger: config.webhookAutoTrigger ?? DEFAULT_MERCHANT_CONFIG.webhookAutoTrigger,
+    payinBps: config.payinBps ?? DEFAULT_MERCHANT_CONFIG.payinBps,
+    payoutBps: config.payoutBps ?? DEFAULT_MERCHANT_CONFIG.payoutBps,
+    settlementBps: config.settlementBps ?? DEFAULT_MERCHANT_CONFIG.settlementBps,
+    settlementDays: config.settlementDays ?? DEFAULT_MERCHANT_CONFIG.settlementDays,
+    minAmountPaise: config.minAmountPaise ?? null,
+    maxAmountPaise: config.maxAmountPaise ?? null
+});
+
 // The fields of a merchant that the API returns. Controllers use this instead of sending the
 // raw database document, so internal fields never leak by accident.
 const toMerchantView = (merchant) => ({
@@ -165,13 +204,101 @@ const toMerchantView = (merchant) => ({
         status: merchant.kyc?.status,
         reviewNote: merchant.kyc?.reviewNote ?? null
     },
+    mode: merchant.mode || "sandbox",
+    remark: merchant.remark || "",
+    config: toConfigView(merchant.config),
+    ...(merchant.owner !== undefined ? {
+        username: merchant.owner?.username ?? null,
+        mfaEnabled: Boolean(merchant.owner?.twoFactor?.enabled)
+    } : {}),
     status: merchant.status,
     statusReason: merchant.statusReason ?? null,
     statusChangedAt: merchant.statusChangedAt ?? null,
     createdAt: merchant.createdAt
 });
 
+// ---- Admin management (Phase 1.1) ----
+
+// Creates an approved merchant and its owner login with a random temporary password. The password
+// is returned once, to be shown in a pop-up; the owner must change it at first login.
+const createMerchantByAdmin = async ({ adminId, ...fields }) => {
+    const temporaryPassword = generateTempPassword();
+    const { merchant, user } = await signupMerchant({
+        ...fields,
+        password: temporaryPassword,
+        mustChangePassword: true,
+        admin: adminId
+    });
+    return { merchant, user, temporaryPassword };
+};
+
+// Edit Config. Returns the merchant plus the old and new values for the audit entry.
+const updateConfig = async (merchantId, patch) => {
+    const merchant = await getMerchant(merchantId);
+    const before = { ...toConfigView(merchant.config), remark: merchant.remark || "" };
+
+    const { remark, ...configPatch } = patch;
+    const next = { ...toConfigView(merchant.config), ...configPatch };
+    if (next.minAmountPaise != null && next.maxAmountPaise != null && next.minAmountPaise > next.maxAmountPaise) {
+        throw new ApiError(400, "minAmountPaise cannot be above maxAmountPaise");
+    }
+
+    merchant.config = next;
+    if (remark !== undefined) merchant.remark = remark;
+    await merchant.save();
+
+    return { merchant, before, after: { ...next, remark: merchant.remark || "" } };
+};
+
+// Sets a new random temporary password for a login of this merchant (the owner unless a userId is
+// given), forces a change at next login and signs that login out everywhere.
+const resetMerchantPassword = async ({ merchantId, userId }) => {
+    const merchant = await getMerchant(merchantId);
+    const user = userId
+        ? await User.findOne({ _id: userId, merchantId: merchant._id, role: "merchant" })
+        : await User.findOne({ merchantId: merchant._id, role: "merchant", merchantRole: "owner" });
+    if (!user) throw new ApiError(404, "User not found for this merchant");
+
+    const temporaryPassword = generateTempPassword();
+    user.password = await bcrypt.hash(temporaryPassword, BCRYPT_ROUNDS);
+    user.mustChangePassword = true;
+    user.refreshToken = null;
+    await user.save();
+
+    return { merchant, user, temporaryPassword };
+};
+
+// Moves a merchant between sandbox and production. Old-mode data is not deleted: every screen
+// and balance only reads the current mode. The old key is revoked and a key for the new mode is
+// issued and returned once.
+const switchMode = async ({ merchantId, mode, confirmMid, reason, adminId }) => {
+    const merchant = await getMerchant(merchantId);
+    const from = merchant.mode || "sandbox";
+
+    if (confirmMid !== merchant.mid) throw new ApiError(400, "confirmMid does not match this merchant");
+    if (from === mode) throw new ApiError(409, `Merchant is already in ${mode} mode`);
+    if (merchant.status !== "active") throw new ApiError(409, "Only an approved (active) merchant can change mode");
+    if (mode === "sandbox" && !reason) throw new ApiError(400, "A reason is required to move back to sandbox");
+
+    // Revoke whatever is still usable in the mode being left.
+    const oldEnvironment = MODE_ENVIRONMENT[from];
+    const old = await credentialService.listRawCredentials(merchant._id);
+    for (const cred of old.filter((c) => c.environment === oldEnvironment && c.status !== "revoked")) {
+        await credentialService.revokeCredential({ merchantId: merchant._id, credentialId: cred._id });
+    }
+
+    merchant.mode = mode;
+    await merchant.save();
+
+    const key = await credentialService.generateKey({ merchant, createdBy: adminId });
+    return { merchant, from, key };
+};
+
 module.exports = {
+    createMerchantByAdmin,
+    updateConfig,
+    resetMerchantPassword,
+    switchMode,
     toMerchantView,
     signupMerchant,
     changeMerchantStatus,

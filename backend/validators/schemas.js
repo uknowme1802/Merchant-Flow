@@ -1,7 +1,7 @@
 const Joi = require("joi");
 const WEBHOOK_EVENTS = require("../constants/webhookEvents");
 const { hasAtMostTwoDecimals } = require("../utils/money");
-const { BUSINESS_TYPES, ENVIRONMENTS, MERCHANT_STATUS } = require("../constants/merchant");
+const { BUSINESS_TYPES, ENVIRONMENTS, MERCHANT_STATUS, MERCHANT_MODES } = require("../constants/merchant");
 const { IFSC_REGEX, ACCOUNT_NUMBER_REGEX, UPI_ID_REGEX, BANK_STATUS, BANK_METHODS } = require("../constants/bank");
 
 const paise = Joi.number().integer().min(0).max(100000000000);
@@ -58,6 +58,11 @@ module.exports = {
         token: twoFactorCode
     }),
 
+    changePassword: Joi.object({
+        currentPassword: Joi.string().required(),
+        newPassword: Joi.string().min(8).max(128).required()
+    }),
+
     refreshToken: Joi.object({ token: requiredString("Refresh token required") }),
     logout: Joi.object({ token: requiredString("Refresh Token required") }),
     twoFactorToken: Joi.object({ token: twoFactorCode }),
@@ -107,6 +112,49 @@ module.exports = {
             taxId: Joi.string().trim().max(64).allow("", null).optional(),
             address: Joi.string().trim().min(5).max(300).required()
         }).required()
+    }),
+
+    // An admin creating a merchant directly: like sign-up, but no password (a temporary one is
+    // generated), plus a username and a mode.
+    adminCreateMerchant: Joi.object({
+        businessName: Joi.string().trim().min(2).max(120).required(),
+        businessType: Joi.string().valid(...BUSINESS_TYPES).required(),
+        website: Joi.string().trim().uri({ scheme: ["http", "https"] }).allow("", null).optional(),
+        country: Joi.string().trim().length(2).uppercase().allow("", null).optional(),
+        contactName: Joi.string().trim().min(2).max(120).required(),
+        contactPhone: Joi.string().trim().pattern(/^\+?[0-9 ()-]{7,20}$/).required()
+            .messages({ "string.pattern.base": "contactPhone must be 7 to 20 digits and may start with +" }),
+        email: Joi.string().trim().lowercase().email({ tlds: { allow: false } }).required(),
+        username: Joi.string().trim().lowercase().pattern(/^[a-z0-9_]{3,30}$/).required()
+            .messages({ "string.pattern.base": "username must be 3 to 30 characters: letters, digits and underscore" }),
+        mode: Joi.string().valid(...MERCHANT_MODES).required(),
+        remark: Joi.string().trim().max(200).allow("").optional(),
+        kyc: Joi.object({
+            registrationNumber: Joi.string().trim().min(3).max(64).required(),
+            taxId: Joi.string().trim().max(64).allow("", null).optional(),
+            address: Joi.string().trim().min(5).max(300).required()
+        }).required()
+    }),
+
+    merchantConfig: Joi.object({
+        webhookAutoTrigger: Joi.boolean(),
+        payinBps: Joi.number().integer().min(0).max(10000),
+        payoutBps: Joi.number().integer().min(0).max(10000),
+        settlementBps: Joi.number().integer().min(0).max(10000),
+        settlementDays: Joi.number().integer().min(0).max(30),
+        minAmountPaise: Joi.number().integer().min(0).allow(null),
+        maxAmountPaise: Joi.number().integer().min(0).allow(null),
+        remark: Joi.string().trim().max(200).allow("")
+    }).min(1),
+
+    resetMerchantPassword: Joi.object({
+        userId: Joi.string().pattern(/^[a-fA-F0-9]{24}$/).optional()
+    }),
+
+    switchMerchantMode: Joi.object({
+        mode: Joi.string().valid(...MERCHANT_MODES).required(),
+        confirmMid: Joi.string().trim().required(),
+        reason: Joi.string().trim().min(3).max(500).allow("", null).optional()
     }),
 
     credentialEnvironment: Joi.object({

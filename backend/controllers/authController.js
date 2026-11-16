@@ -12,7 +12,9 @@
   const REFRESH_SECRET = process.env.REFRESH_SECRET;
 
   const signAccessToken = (user) =>
-    jwt.sign({id: user._id, email:user.email, role:user.role}, SECRET, {
+    jwt.sign({id: user._id, email:user.email, role:user.role,
+      // An admin-issued temporary password must be replaced before anything else works.
+      ...(user.mustChangePassword ? {mustChange: true} : {})}, SECRET, {
       expiresIn: "15m"
     })
 
@@ -46,7 +48,9 @@
         })
       }
 
-      const user = await User.findOne({email:email.toLowerCase()}).select(
+      // The "email" field also accepts a username (merchant logins created by an admin have one).
+      const identifier = email.trim().toLowerCase();
+      const user = await User.findOne({$or: [{email: identifier}, {username: identifier}]}).select(
         "+password +refreshToken"
       );
 
@@ -86,10 +90,35 @@
         success: true,
         accessToken,
         refreshToken,
-        user: {id: user._id, email:user.email, role: user.role}
+        user: {id: user._id, email:user.email, role: user.role, username: user.username ?? null},
+        mustChangePassword: Boolean(user.mustChangePassword)
       });
     } catch (err){
       next(err)
+    }
+  };
+
+  // POST /api/auth/change-password. Also the only call allowed while a temporary password is
+  // still in place (see authMiddleware). Signs every other session out and returns fresh tokens.
+  exports.changePassword = async (req, res, next) => {
+    try {
+      const { currentPassword, newPassword } = req.body;
+
+      const user = await User.findById(req.user.id).select("+password +refreshToken");
+      if (!user || !(await bcrypt.compare(currentPassword, user.password))) {
+        return res.status(401).json({ success: false, message: "Current password is incorrect" });
+      }
+      if (currentPassword === newPassword) {
+        return res.status(400).json({ success: false, message: "Choose a different password" });
+      }
+
+      user.password = await bcrypt.hash(newPassword, 10);
+      user.mustChangePassword = false;
+
+      const {accessToken, refreshToken} = await issueSessionTokens(user);
+      return res.json({ success: true, accessToken, refreshToken });
+    } catch (err) {
+      next(err);
     }
   };
 

@@ -2,6 +2,7 @@ const MerchantCredential = require("../models/MerchantCredential");
 const ApiError = require("../utils/ApiError");
 const { generateSecret, lastFour } = require("../utils/identifiers");
 const { encrypt, decrypt } = require("../utils/credentialCrypto");
+const { MODE_ENVIRONMENT } = require("../constants/merchant");
 
 const GRACE_HOURS = () => Number(process.env.CREDENTIAL_ROTATION_GRACE_HOURS) || 24;
 const LAST_USED_THROTTLE_MS = 5 * 60 * 1000;
@@ -108,6 +109,19 @@ const revokeCredential = async ({ merchantId, credentialId }) => {
     return toPublicView(credential);
 };
 
+// Admin "Keys" action: creates the key for the merchant's current mode, or replaces the existing
+// one (the old key keeps working for the grace period). Returns the secret once.
+const generateKey = async ({ merchant, createdBy }) => {
+    const environment = MODE_ENVIRONMENT[merchant.mode || "sandbox"];
+    const existing = await MerchantCredential.findOne({ merchantId: merchant._id, environment, status: "active" });
+    const result = existing
+        ? await rotateCredential({ merchant, environment, createdBy })
+        : await issueCredential({ merchant, environment, createdBy });
+    return { ...result, environment, regenerated: Boolean(existing) };
+};
+
+const listRawCredentials = (merchantId) => MerchantCredential.find({ merchantId });
+
 const listCredentials = async (merchantId) => {
     const credentials = await MerchantCredential.find({ merchantId }).sort({ createdAt: -1 });
     return credentials.map((c) => toPublicView(c));
@@ -155,6 +169,8 @@ module.exports = {
     rotateCredential,
     revokeCredential,
     listCredentials,
+    listRawCredentials,
+    generateKey,
     getUsableSecrets,
     touchLastUsed
 };

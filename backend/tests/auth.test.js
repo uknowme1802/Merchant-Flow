@@ -57,8 +57,9 @@ describe("Authorization API", () => {
 
        expect(mockUser.save).toHaveBeenCalledTimes(1);
 
+       // The login field accepts an email or a username.
        expect(User.findOne).toHaveBeenCalledWith({
-        email: "admin@test.com"
+        $or: [{ email: "admin@test.com" }, { username: "admin@test.com" }]
        })
 
 

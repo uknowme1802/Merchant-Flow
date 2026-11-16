@@ -28,6 +28,23 @@ const BUSINESS_TYPES = ["sole_proprietor", "company", "non_profit", "other"];
 
 const KYC_STATUS = ["submitted", "approved", "rejected"];
 
+// A merchant works in one mode at a time. Sandbox data is hidden (not deleted) when the merchant
+// moves to production, and each mode uses its own kind of API key.
+const MERCHANT_MODES = ["sandbox", "production"];
+const MODE_ENVIRONMENT = { sandbox: "sandbox", production: "live" };
+
+// Defaults for the per-merchant settings an admin edits in Edit Config. Charges are integer basis
+// points (250 = 2.50%); amounts are paise.
+const DEFAULT_MERCHANT_CONFIG = {
+    webhookAutoTrigger: true,
+    payinBps: 0,
+    payoutBps: 0,
+    settlementBps: 0,
+    settlementDays: 1,
+    minAmountPaise: null,
+    maxAmountPaise: null
+};
+
 module.exports = {
     MERCHANT_STATUS,
     MERCHANT_ACTIONS,
@@ -35,5 +52,8 @@ module.exports = {
     ENVIRONMENTS,
     CREDENTIAL_STATUS,
     BUSINESS_TYPES,
-    KYC_STATUS
+    KYC_STATUS,
+    MERCHANT_MODES,
+    MODE_ENVIRONMENT,
+    DEFAULT_MERCHANT_CONFIG
 };

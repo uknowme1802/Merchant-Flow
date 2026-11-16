@@ -11,13 +11,16 @@ const { createFakeModel } = require("./fakeModels");
 
 const Merchant = createFakeModel("Merchant", {
     uniques: [(a, b) => a.mid === b.mid],
-    defaults: () => ({ status: "pending", statusReason: null, statusChangedAt: null, statusChangedBy: null }),
+    defaults: () => ({
+        status: "pending", statusReason: null, statusChangedAt: null, statusChangedBy: null,
+        mode: "sandbox", remark: "", config: {}
+    }),
     finalize: (doc) => { doc.kyc = { status: "submitted", reviewNote: null, ...doc.kyc }; }
 });
 
 const User = createFakeModel("User", {
-    uniques: [(a, b) => a.email === b.email],
-    defaults: () => ({ role: "user", merchantId: null, merchantRole: null })
+    uniques: [(a, b) => a.email === b.email, (a, b) => Boolean(a.username) && a.username === b.username],
+    defaults: () => ({ role: "user", merchantId: null, merchantRole: null, mustChangePassword: false })
 });
 
 // Same rule as the "one_active_per_env" index: one active secret per merchant and environment.
