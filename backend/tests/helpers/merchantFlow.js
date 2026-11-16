@@ -13,9 +13,13 @@ const adminToken = () =>
     jwt.sign({ id: "a".repeat(24), email: "admin@test.com", role: "admin" }, process.env.SECRET, { expiresIn: "15m" });
 
 const userToken = () =>
-    jwt.sign({ id: "b".repeat(24), email: "user@test.com", role: "user" }, process.env.SECRET, { expiresIn: "15m" });
+    jwt.sign({ id: "b".repeat(24), email: "user@test.com", role: "agent" }, process.env.SECRET, { expiresIn: "15m" });
+
+// Sign-up needs a username; by default it is made from the email so each test merchant gets its own.
+const usernameFor = (email) => email.split("@")[0].toLowerCase().replace(/[^a-z0-9_]/g, "_").padEnd(3, "_");
 
 const validSignup = (overrides = {}) => ({
+    username: usernameFor(overrides.email || "owner@acme.example"),
     businessName: "Acme Traders",
     businessType: "company",
     website: "https://acme.example",

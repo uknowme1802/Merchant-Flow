@@ -25,6 +25,11 @@ const requireMerchantUser = async (req, res, next) => {
             return res.status(403).json({ success: false, message: "A merchant account is required" });
         }
 
+        // Suspended or deleted: the session is over. 401 sends the dashboard to the login page.
+        if (["suspended", "deleted"].includes(merchant.status)) {
+            return res.status(401).json({ success: false, message: "Session ended. Please log in again" });
+        }
+
         req.merchant = merchant;
         req.merchantRole = user.merchantRole;
         req.merchantUserId = user._id;

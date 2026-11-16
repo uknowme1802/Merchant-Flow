@@ -11,7 +11,7 @@ describe("Dashboard stats - real data aggregation for charts", ()=>{
         jest.clearAllMocks();
     });
 
-    const buildAccessToken = (id, role = "user")=>
+    const buildAccessToken = (id, role = "agent")=>
         jwt.sign({id, email: "test@test.com", role}, process.env.SECRET, {
             expiresIn: "15m"
         })

@@ -29,6 +29,7 @@ tags:
   - name: Webhooks
   - name: Merchant
   - name: Merchant Admin
+  - name: Bank Admin
   - name: Merchant API
   - name: Ops
 security:
@@ -38,7 +39,12 @@ paths:
     post:
       tags: [Auth]
       summary: Log in
-      description: Returns tokens, or `twoFactorRequired` with a `pendingToken` when 2FA is enabled. Rate limited to 10 requests / 15 min.
+      description: |
+        Returns tokens, or `twoFactorRequired` with a `pendingToken` when 2FA is enabled. Rate limited to 10 requests / 15 min.
+
+        The `email` field also accepts a username, and neither is case sensitive. When `mustChangePassword` is true the login used a
+        temporary password: every other endpoint answers 403 with `code: PASSWORD_CHANGE_REQUIRED` until
+        `POST /api/auth/change-password` succeeds.
       security: []
       requestBody:
         required: true
@@ -48,7 +54,7 @@ paths:
               type: object
               required: [email, password]
               properties:
-                email: { type: string, format: email }
+                email: { type: string, description: Email address or username }
                 password: { type: string, format: password }
       responses:
         "200":
@@ -61,7 +67,37 @@ paths:
                   - $ref: "#/components/schemas/TwoFactorRequired"
         "400": { $ref: "#/components/responses/BadRequest" }
         "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { description: "The account is disabled (`code: ACCOUNT_DISABLED`), or its merchant is suspended or deleted (`code: MERCHANT_SUSPENDED`)" }
         "429": { $ref: "#/components/responses/TooManyRequests" }
+  /api/auth/session:
+    get:
+      tags: [Auth]
+      summary: Check that the session is still valid
+      description: Answers 401 once the user was disabled, had the password reset or the role changed, or the merchant was suspended or deleted.
+      responses:
+        "200": { description: The session is valid }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+  /api/auth/change-password:
+    post:
+      tags: [Auth]
+      summary: Change your own password
+      description: |
+        The only call (besides logout) that works while a temporary password is in place. Signs every
+        other session out and returns fresh tokens for this one.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [currentPassword, newPassword]
+              properties:
+                currentPassword: { type: string, format: password }
+                newPassword: { type: string, format: password, minLength: 8, maxLength: 128 }
+      responses:
+        "200": { description: New access and refresh tokens }
+        "400": { description: "Too short, or the same as the current password" }
+        "401": { description: The current password is wrong }
   /api/auth/2fa/verify-login:
     post:
       tags: [Auth]
@@ -104,7 +140,7 @@ paths:
         "200":
           description: New access token
         "400": { $ref: "#/components/responses/BadRequest" }
-        "403": { $ref: "#/components/responses/Forbidden" }
+        "403": { description: "The token was revoked, or the account is disabled (`code: ACCOUNT_DISABLED`)" }
   /api/auth/logout:
     post:
       tags: [Auth]
@@ -292,26 +328,114 @@ paths:
     get:
       tags: [Users]
       summary: List users (admin)
+      description: Paged, newest first. `search` matches username and email. Never returns passwords, tokens or two-factor secrets.
+      parameters:
+        - { name: search, in: query, schema: { type: string, maxLength: 100 } }
+        - { name: page, in: query, schema: { type: integer, default: 1 } }
+        - { name: limit, in: query, schema: { type: integer, default: 10, maximum: 100 } }
       responses:
-        "200": { description: Users }
+        "200":
+          description: Paginated users
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  total: { type: integer }
+                  page: { type: integer }
+                  limit: { type: integer }
+                  data:
+                    type: array
+                    items: { $ref: "#/components/schemas/User" }
         "403": { $ref: "#/components/responses/Forbidden" }
     post:
       tags: [Users]
-      summary: Create a user (admin)
+      summary: Create an admin or agent (admin)
+      description: |
+        The server generates a temporary password and returns it once in `temporaryPassword`
+        (`Cache-Control: no-store`). The user must change it at first login. Merchant logins are
+        created with their merchant, not here.
       requestBody:
         required: true
         content:
           application/json:
             schema:
               type: object
-              required: [email, password]
+              required: [username, email]
               properties:
+                username: { type: string, pattern: "^[a-z0-9_]{3,30}$" }
                 email: { type: string, format: email }
-                password: { type: string, format: password }
-                role: { type: string, enum: [admin, user, merchant] }
+                role: { type: string, enum: [admin, agent], default: agent }
       responses:
-        "201": { description: Created }
-        "409": { description: Email already in use }
+        "201": { description: The user and a one-time temporary password }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { description: Username or email already in use }
+  /api/users/{id}:
+    patch:
+      tags: [Users]
+      summary: Edit a user (admin)
+      description: |
+        Send only the fields to change. Disabling a user or changing their role signs them out at once;
+        they log in again to get the new role. An admin cannot disable or demote themself, and the last
+        active admin cannot be disabled or demoted. Merchant logins are read-only here (409).
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              minProperties: 1
+              properties:
+                username: { type: string, pattern: "^[a-z0-9_]{3,30}$" }
+                email: { type: string, format: email }
+                role: { type: string, enum: [admin, agent] }
+                disabled: { type: boolean }
+      responses:
+        "200": { description: Updated user }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: "Username or email taken, last active admin, or a merchant login" }
+  /api/users/{id}/require-mfa:
+    post:
+      tags: [Users]
+      summary: Require two-factor for a user, the MFA switch on (admin)
+      description: A user who has not set it up is signed out, and after the next login every call answers 403 `MFA_SETUP_REQUIRED` until they finish the setup under `/api/2fa`. Not for your own account or for merchant logins.
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200": { description: Updated user }
+        "400": { description: Your own account }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: "Already required, or a merchant login" }
+  /api/users/{id}/disable-mfa:
+    post:
+      tags: [Users]
+      summary: Turn two-factor off for a user, the MFA switch off (admin)
+      description: Clears the user's authenticator code and the requirement. Turning the switch off and on again resets it. Not for your own account or for merchant logins.
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200": { description: Updated user }
+        "400": { description: Your own account }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: "Two-factor is neither enabled nor required, or a merchant login" }
+  /api/users/{id}/reset-password:
+    post:
+      tags: [Users]
+      summary: Reset a user's password (admin)
+      description: |
+        Returns a new temporary password once (`Cache-Control: no-store`), signs the user out everywhere
+        and forces a change at next login. Not for your own account or for merchant logins.
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200": { description: One-time temporary password }
+        "400": { description: Your own account }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: A merchant login }
   /api/valid-payments:
     get:
       tags: [Payment Codes]
@@ -431,7 +555,7 @@ paths:
           application/json:
             schema:
               type: object
-              required: [businessName, businessType, country, contactName, contactPhone, email, password, kyc]
+              required: [businessName, businessType, country, contactName, contactPhone, email, username, password, kyc]
               properties:
                 businessName: { type: string }
                 businessType: { type: string, enum: [sole_proprietor, company, non_profit, other] }
@@ -440,6 +564,7 @@ paths:
                 contactName: { type: string }
                 contactPhone: { type: string }
                 email: { type: string }
+                username: { type: string, pattern: "^[a-z0-9_]{3,30}$", description: "The owner's login name; login accepts it in place of the email" }
                 password: { type: string, minLength: 8 }
                 kyc:
                   type: object
@@ -464,7 +589,7 @@ paths:
       tags: [Merchant]
       summary: List API keys (metadata only, owner or developer)
       responses:
-        "200": { description: Keys with keyHint, status, expiresAt, lastUsedAt }
+        "200": { description: "Keys with keyHint, status, expiresAt, lastUsedAt" }
     post:
       tags: [Merchant]
       summary: Create the API key for an environment; the secret is shown once
@@ -540,14 +665,204 @@ paths:
   /api/admin/merchants:
     get:
       tags: [Merchant Admin]
-      summary: Review queue (admin)
+      summary: Merchant List (admin)
+      description: Each row carries the owner's `username`, `mfaEnabled`, the `mode`, `remark` and `config`. `search` matches MID, username, business name, email and remark. Deleted merchants are left out unless `status=deleted`.
       parameters:
-        - { name: status, in: query, schema: { type: string, enum: [pending, active, suspended, rejected] } }
+        - { name: status, in: query, schema: { type: string, enum: [pending, active, suspended, rejected, deleted] } }
         - { name: search, in: query, schema: { type: string } }
         - { name: page, in: query, schema: { type: integer, default: 1 } }
-        - { name: limit, in: query, schema: { type: integer, default: 20 } }
+        - { name: limit, in: query, schema: { type: integer, default: 20, maximum: 100 } }
       responses:
         "200": { description: Paginated merchants }
+    post:
+      tags: [Merchant Admin]
+      summary: Create an approved merchant (admin)
+      description: |
+        Creates the merchant (status `active`) and its owner login. A temporary password for the owner
+        is returned once in `temporaryPassword` (`Cache-Control: no-store`).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [businessName, businessType, contactName, contactPhone, email, username, mode, kyc]
+              properties:
+                businessName: { type: string }
+                businessType: { type: string, enum: [sole_proprietor, company, non_profit, other] }
+                website: { type: string, format: uri }
+                country: { type: string, example: IN }
+                contactName: { type: string }
+                contactPhone: { type: string, example: "+91 98765 43210" }
+                email: { type: string, format: email }
+                username: { type: string, pattern: "^[a-z0-9_]{3,30}$" }
+                mode: { type: string, enum: [sandbox, production] }
+                remark: { type: string, maxLength: 200 }
+                kyc:
+                  type: object
+                  required: [registrationNumber, address]
+                  properties:
+                    registrationNumber: { type: string }
+                    taxId: { type: string }
+                    address: { type: string }
+      responses:
+        "201": { description: "The merchant, the owner's username and a one-time temporary password" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { description: Username or email already in use }
+  /api/admin/merchants/{id}/config:
+    patch:
+      tags: [Merchant Admin]
+      summary: Edit Config (admin)
+      description: Charges are integer basis points (250 = 2.50%), amounts are paise. Send only the fields to change. Audited with the old and new values.
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              minProperties: 1
+              properties:
+                webhookAutoTrigger: { type: boolean }
+                payinBps: { type: integer, minimum: 0, maximum: 10000 }
+                payoutBps: { type: integer, minimum: 0, maximum: 10000 }
+                settlementBps: { type: integer, minimum: 0, maximum: 10000 }
+                settlementDays: { type: integer, minimum: 0, maximum: 30 }
+                minAmountPaise: { type: integer, minimum: 0, nullable: true }
+                maxAmountPaise: { type: integer, minimum: 0, nullable: true }
+                remark: { type: string, maxLength: 200 }
+      responses:
+        "200": { description: Updated merchant }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/admin/merchants/{id}/team:
+    get:
+      tags: [Merchant Admin]
+      summary: A merchant's logins (admin)
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200": { description: "Team members: username, email, team role, two-factor state" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/admin/merchants/{id}/reset-password:
+    post:
+      tags: [Merchant Admin]
+      summary: Reset a merchant login's password (admin)
+      description: "Resets the owner unless `userId` names another member of this merchant. Returns the temporary password once (`Cache-Control: no-store`) and signs that login out."
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                userId: { type: string }
+      responses:
+        "200": { description: One-time temporary password }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/admin/merchants/{id}/credentials:
+    post:
+      tags: [Merchant Admin]
+      summary: Generate or regenerate the merchant's key (admin)
+      description: |
+        The key is for the merchant's current mode (`sk_test_...` in sandbox, `sk_live_...` in production).
+        The secret is returned once (`Cache-Control: no-store`) and is never listed or audited. If a key
+        exists it is replaced, and the old one keeps working for the grace period (24 hours by default).
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "201": { description: "The credential metadata, the one-time `secret`, `regenerated` and `previousKeyExpiresAt`" }
+        "403": { description: The merchant's status does not allow keys }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/admin/merchants/{id}/delete:
+    post:
+      tags: [Merchant Admin]
+      summary: Delete a merchant, keeping its records (admin)
+      description: A soft delete. The merchant leaves the list, its logins are signed out and refused, and its keys are revoked. Nothing is erased.
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason: { type: string, minLength: 3 }
+      responses:
+        "200": { description: The merchant with status `deleted` }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: Already deleted }
+  /api/admin/merchants/{id}/force-delete:
+    post:
+      tags: [Merchant Admin]
+      summary: Permanently remove a merchant (admin)
+      description: Removes the merchant with its logins, keys and bank mappings. `confirmMid` must equal its MID. Bank accounts and audit entries are kept. This cannot be undone.
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [confirmMid]
+              properties:
+                confirmMid: { type: string }
+      responses:
+        "200": { description: "`removed` with the number of logins, credentials and mappings" }
+        "400": { description: The MID does not match }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/admin/merchants/{id}/require-mfa:
+    post:
+      tags: [Merchant Admin]
+      summary: Require two-factor for the merchant's owner (admin)
+      description: The owner is signed out and must set two-factor up right after the next login.
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200": { description: Required }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: Already required }
+  /api/admin/merchants/{id}/disable-mfa:
+    post:
+      tags: [Merchant Admin]
+      summary: Turn two-factor off for the merchant's owner (admin)
+      description: Clears the owner's authenticator code and the requirement.
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200": { description: Turned off }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: Two-factor is neither enabled nor required }
+  /api/admin/merchants/{id}/switch-mode:
+    post:
+      tags: [Merchant Admin]
+      summary: Switch a merchant between sandbox and production (admin)
+      description: |
+        The merchant must be `active` and `confirmMid` must equal its MID. Data of the old mode is hidden,
+        not deleted. The old mode's key is revoked and a key for the new mode is returned once. Moving back
+        to sandbox needs a `reason`.
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [mode, confirmMid]
+              properties:
+                mode: { type: string, enum: [sandbox, production] }
+                confirmMid: { type: string }
+                reason: { type: string }
+      responses:
+        "200": { description: "The merchant, the new credential and its one-time `secret`" }
+        "400": { description: "Wrong MID, or no reason when moving back to sandbox" }
+        "409": { description: "Already in that mode, or the merchant is not active" }
   /api/admin/merchants/{id}:
     get:
       tags: [Merchant Admin]
@@ -561,7 +876,7 @@ paths:
     post:
       tags: [Merchant Admin]
       summary: Approve, reject, suspend or reactivate (admin)
-      description: Reject and suspend require a `reason`. Transitions that do not fit the current status return 409.
+      description: Reject and suspend require a `reason`. Transitions that do not fit the current status return 409. Suspending signs every login of the merchant out at once and refuses their login until it is reactivated.
       parameters:
         - $ref: "#/components/parameters/Id"
         - { name: action, in: path, required: true, schema: { type: string, enum: [approve, reject, suspend, reactivate] } }
@@ -590,6 +905,139 @@ paths:
       summary: Platform audit trail (admin)
       responses:
         "200": { description: Paginated audit entries }
+  /api/admin/banks:
+    get:
+      tags: [Bank Admin]
+      summary: Bank List (admin)
+      parameters:
+        - { name: search, in: query, schema: { type: string }, description: "Bank ID, holder, bank name, account number or UPI ID" }
+        - { name: status, in: query, schema: { type: string, enum: [active, inactive] } }
+        - { name: page, in: query, schema: { type: integer, default: 1 } }
+        - { name: limit, in: query, schema: { type: integer, default: 20, maximum: 100 } }
+      responses:
+        "200": { description: Paginated bank accounts }
+    post:
+      tags: [Bank Admin]
+      summary: Add a bank account (admin)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: "#/components/schemas/BankInput"
+                - required: [holderName, bankName, accountNumber, ifsc, upiId]
+      responses:
+        "201": { description: Created }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { description: The same account number and IFSC already exists }
+  /api/admin/banks/{id}:
+    patch:
+      tags: [Bank Admin]
+      summary: Edit a bank account (admin)
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/BankInput" }
+      responses:
+        "200": { description: Updated }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [Bank Admin]
+      summary: Delete a bank account (admin)
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200": { description: Deleted }
+        "409": { description: The bank is mapped to a merchant; set it to inactive instead }
+  /api/admin/banks/{id}/verify:
+    post:
+      tags: [Bank Admin]
+      summary: Mark a bank account as verified (admin)
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200": { description: Verified }
+  /api/admin/merchants/{id}/banks:
+    get:
+      tags: [Bank Admin]
+      summary: Banks mapped to a merchant, the PAYIN page (admin)
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200": { description: Mappings with their bank }
+    post:
+      tags: [Bank Admin]
+      summary: Map a bank to a merchant (admin)
+      description: The mapping's own limits are optional and may only be stricter than the bank's.
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [bankId]
+              properties:
+                bankId: { type: string }
+                minPaise: { type: integer, nullable: true }
+                maxPaise: { type: integer, nullable: true }
+                dailyLimitPaise: { type: integer, nullable: true }
+      responses:
+        "201": { description: Mapped }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: Already mapped }
+  /api/admin/merchants/{id}/banks/{mappingId}:
+    patch:
+      tags: [Bank Admin]
+      summary: Turn a mapping on or off (admin)
+      parameters:
+        - $ref: "#/components/parameters/Id"
+        - { name: mappingId, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [active]
+              properties:
+                active: { type: boolean }
+      responses:
+        "200": { description: The mapping with its bank }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [Bank Admin]
+      summary: Remove a mapping (admin)
+      parameters:
+        - $ref: "#/components/parameters/Id"
+        - { name: mappingId, in: path, required: true, schema: { type: string } }
+      responses:
+        "200": { description: Removed }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/admin/bank-mappings/bulk:
+    post:
+      tags: [Bank Admin]
+      summary: Bulk Payin Meta Mapping (admin)
+      description: Maps every bank to every merchant. Pairs that already exist are skipped, so the call can be repeated. At most 50 of each and 500 pairs per request.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [merchantIds, bankIds]
+              properties:
+                merchantIds: { type: array, items: { type: string }, minItems: 1, maxItems: 50 }
+                bankIds: { type: array, items: { type: string }, minItems: 1, maxItems: 50 }
+      responses:
+        "200": { description: "Nothing new: every pair already existed (`created: 0`)" }
+        "201": { description: "`created` and `skipped` counts" }
+        "404": { description: An unknown merchant or bank; nothing is mapped }
   /v1/whoami:
     get:
       tags: [Merchant API]
@@ -674,7 +1122,36 @@ components:
           properties:
             id: { type: string }
             email: { type: string }
-            role: { type: string, enum: [admin, user] }
+            role: { type: string, enum: [admin, agent, merchant] }
+            username: { type: string, nullable: true }
+        mustChangePassword: { type: boolean, description: True after login with a temporary password }
+        mfaSetupRequired: { type: boolean, description: "True when an admin requires two-factor and it is not set up yet; only `/api/2fa` calls work until it is" }
+    User:
+      type: object
+      properties:
+        id: { type: string }
+        username: { type: string, nullable: true }
+        email: { type: string }
+        role: { type: string, enum: [admin, agent, merchant] }
+        disabled: { type: boolean }
+        mfaEnabled: { type: boolean }
+        mustChangePassword: { type: boolean }
+        createdAt: { type: string, format: date-time }
+    BankInput:
+      type: object
+      properties:
+        holderName: { type: string }
+        bankName: { type: string }
+        accountNumber: { type: string, pattern: "^\\d{9,18}$" }
+        ifsc: { type: string, example: YESB0000001 }
+        upiId: { type: string, example: name@bank }
+        minPaise: { type: integer, nullable: true }
+        maxPaise: { type: integer, nullable: true }
+        dailyLimitPaise: { type: integer, nullable: true }
+        methods: { type: array, items: { type: string, enum: [UPI, IMPS] } }
+        qrEnabled: { type: boolean }
+        level: { type: string }
+        status: { type: string, enum: [active, inactive] }
     TwoFactorRequired:
       type: object
       properties:

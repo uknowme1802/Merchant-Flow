@@ -20,7 +20,7 @@ const Merchant = createFakeModel("Merchant", {
 
 const User = createFakeModel("User", {
     uniques: [(a, b) => a.email === b.email, (a, b) => Boolean(a.username) && a.username === b.username],
-    defaults: () => ({ role: "user", merchantId: null, merchantRole: null, mustChangePassword: false })
+    defaults: () => ({ role: "agent", merchantId: null, merchantRole: null, mustChangePassword: false, disabled: false, mfaRequired: false })
 });
 
 // Same rule as the "one_active_per_env" index: one active secret per merchant and environment.

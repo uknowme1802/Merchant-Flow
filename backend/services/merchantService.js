@@ -1,9 +1,13 @@
 const bcrypt = require("bcryptjs");
 const Merchant = require("../models/Merchant");
 const User = require("../models/User");
+const MerchantCredential = require("../models/MerchantCredential");
+const MerchantBankMapping = require("../models/MerchantBankMapping");
 const ApiError = require("../utils/ApiError");
 const { generateMid, generateTempPassword } = require("../utils/identifiers");
 const credentialService = require("./credentialService");
+const sessionRevocation = require("../utils/sessionRevocation");
+const userService = require("./userService");
 const { MERCHANT_ACTIONS, MODE_ENVIRONMENT, DEFAULT_MERCHANT_CONFIG } = require("../constants/merchant");
 
 const MAX_MID_ATTEMPTS = 5;
@@ -76,6 +80,18 @@ const signupMerchant = async ({ businessName, businessType, website, country, co
     }
 };
 
+// Signs every login of a merchant out at once: no refresh, and their access tokens stop now.
+// Logging in again is refused separately while the merchant is suspended or deleted.
+const signOutTeam = async (merchantId) => {
+    const members = await User.find({ merchantId, role: "merchant" });
+    for (const member of members) {
+        member.refreshToken = null;
+        await member.save();
+        sessionRevocation.revoke(member._id);
+    }
+    return members.length;
+};
+
 // Applies one admin decision. The merchant must currently be in the status that action starts from.
 const changeMerchantStatus = async ({ merchantId, action, adminId, reason }) => {
     const rule = Object.hasOwn(MERCHANT_ACTIONS, action) ? MERCHANT_ACTIONS[action] : null;
@@ -103,12 +119,13 @@ const changeMerchantStatus = async ({ merchantId, action, adminId, reason }) => 
     }
 
     await merchant.save();
+    if (action === "suspend") await signOutTeam(merchant._id);
     return { merchant, previousStatus };
 };
 
 const listMerchants = async ({ status, search, page = 1, limit = 20 }) => {
-    const query = {};
-    if (status) query.status = status;
+    // Deleted merchants are hidden unless the list is filtered to them.
+    const query = { status: status || { $ne: "deleted" } };
     if (search) {
         // Escape the text so it is matched literally, never interpreted as a regular expression.
         const pattern = new RegExp(search.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
@@ -140,10 +157,38 @@ const getMerchant = async (merchantId) => {
     return merchant;
 };
 
+// Like getMerchant, plus the owner login, so the view includes the username and two-factor state.
+const getMerchantWithOwner = async (merchantId) => {
+    const merchant = await getMerchant(merchantId);
+    merchant.owner = await User.findOne({ merchantId: merchant._id, role: "merchant", merchantRole: "owner" }) || null;
+    return merchant;
+};
+
+const getMerchantsByIds = async (merchantIds) => {
+    const merchants = await Merchant.find({ _id: { $in: merchantIds } });
+    if (merchants.length !== merchantIds.length) throw new ApiError(404, "One or more merchants were not found");
+    return merchants;
+};
+
 // ---- Team management (owner only; enforced by the route) ----
 
 const listTeam = (merchantId) =>
     User.find({ merchantId, role: "merchant" }).select("email merchantRole createdAt").sort({ createdAt: 1 });
+
+// The admin's view of a merchant's logins (the "Team and reset password" action).
+const listTeamForAdmin = async (merchantId) => {
+    const merchant = await getMerchant(merchantId);
+    const members = await User.find({ merchantId: merchant._id, role: "merchant" }).sort({ createdAt: 1 });
+    return members.map((m) => ({
+        id: String(m._id),
+        email: m.email,
+        username: m.username ?? null,
+        merchantRole: m.merchantRole,
+        mfaEnabled: Boolean(m.twoFactor?.enabled),
+        mustChangePassword: Boolean(m.mustChangePassword),
+        createdAt: m.createdAt
+    }));
+};
 
 const addTeamMember = async ({ merchantId, email, password, merchantRole }) => {
     const normalisedEmail = email.toLowerCase();
@@ -209,7 +254,8 @@ const toMerchantView = (merchant) => ({
     config: toConfigView(merchant.config),
     ...(merchant.owner !== undefined ? {
         username: merchant.owner?.username ?? null,
-        mfaEnabled: Boolean(merchant.owner?.twoFactor?.enabled)
+        mfaEnabled: Boolean(merchant.owner?.twoFactor?.enabled),
+        mfaRequired: Boolean(merchant.owner?.mfaRequired)
     } : {}),
     status: merchant.status,
     statusReason: merchant.statusReason ?? null,
@@ -264,6 +310,7 @@ const resetMerchantPassword = async ({ merchantId, userId }) => {
     user.mustChangePassword = true;
     user.refreshToken = null;
     await user.save();
+    sessionRevocation.revoke(user._id);
 
     return { merchant, user, temporaryPassword };
 };
@@ -294,7 +341,70 @@ const switchMode = async ({ merchantId, mode, confirmMid, reason, adminId }) => 
     return { merchant, from, key };
 };
 
+// Delete (soft): the merchant disappears from the list, its logins are signed out and refused,
+// and its keys are revoked. Nothing is erased; Force Delete does that.
+const deleteMerchant = async ({ merchantId, adminId, reason }) => {
+    const merchant = await getMerchant(merchantId);
+    if (merchant.status === "deleted") throw new ApiError(409, "This merchant is already deleted");
+
+    const previousStatus = merchant.status;
+    merchant.status = "deleted";
+    merchant.statusReason = reason || null;
+    merchant.statusChangedAt = new Date();
+    merchant.statusChangedBy = adminId;
+    await merchant.save();
+
+    const credentials = await credentialService.listRawCredentials(merchant._id);
+    for (const cred of credentials.filter((c) => c.status !== "revoked")) {
+        await credentialService.revokeCredential({ merchantId: merchant._id, credentialId: cred._id });
+    }
+    await signOutTeam(merchant._id);
+
+    return { merchant, previousStatus };
+};
+
+// Force Delete: permanently removes the merchant with its logins, keys and bank mappings. The
+// typed MID must match. Audit entries are kept. This cannot be undone.
+const forceDeleteMerchant = async ({ merchantId, confirmMid }) => {
+    const merchant = await getMerchant(merchantId);
+    if (confirmMid !== merchant.mid) throw new ApiError(400, "confirmMid does not match this merchant");
+
+    const members = await User.find({ merchantId: merchant._id, role: "merchant" });
+    members.forEach((member) => sessionRevocation.revoke(member._id));
+
+    // Dependants first, the merchant last: if this stops half-way it can simply be run again.
+    const mappings = await MerchantBankMapping.deleteMany({ merchantId: merchant._id });
+    const credentials = await MerchantCredential.deleteMany({ merchantId: merchant._id });
+    const logins = await User.deleteMany({ merchantId: merchant._id, role: "merchant" });
+    await Merchant.deleteOne({ _id: merchant._id });
+
+    return {
+        merchant,
+        removed: { logins: logins.deletedCount, credentials: credentials.deletedCount, mappings: mappings.deletedCount }
+    };
+};
+
+// Turns two-factor off for the merchant's owner login (the 2FA switch in the Merchant List).
+const disableOwnerMfa = async (merchantId) => {
+    const merchant = await getMerchantWithOwner(merchantId);
+    if (!merchant.owner) throw new ApiError(404, "This merchant has no owner login");
+    const user = await userService.clearTwoFactor(merchant.owner);
+    return { merchant, user };
+};
+
+// The 2FA switch, on: the merchant's owner must set up two-factor at their next login.
+const requireOwnerMfa = async (merchantId) => {
+    const merchant = await getMerchantWithOwner(merchantId);
+    if (!merchant.owner) throw new ApiError(404, "This merchant has no owner login");
+    const user = await userService.requireTwoFactor(merchant.owner);
+    return { merchant, user };
+};
+
 module.exports = {
+    requireOwnerMfa,
+    deleteMerchant,
+    forceDeleteMerchant,
+    disableOwnerMfa,
     createMerchantByAdmin,
     updateConfig,
     resetMerchantPassword,
@@ -304,7 +414,10 @@ module.exports = {
     changeMerchantStatus,
     listMerchants,
     getMerchant,
+    getMerchantWithOwner,
+    getMerchantsByIds,
     listTeam,
+    listTeamForAdmin,
     addTeamMember,
     removeTeamMember
 };

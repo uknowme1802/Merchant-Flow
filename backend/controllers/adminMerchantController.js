@@ -15,7 +15,7 @@ exports.listMerchants = async (req, res, next) => {
 // GET /api/admin/merchants/:id   (profile plus credential metadata, never secrets)
 exports.getMerchant = async (req, res, next) => {
     try {
-        const merchant = await merchantService.getMerchant(req.params.id);
+        const merchant = await merchantService.getMerchantWithOwner(req.params.id);
         const credentials = await credentialService.listCredentials(merchant._id);
         res.json({ success: true, merchant: merchantService.toMerchantView(merchant), credentials });
     } catch (err) {

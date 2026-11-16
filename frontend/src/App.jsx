@@ -14,12 +14,21 @@ import MerchantAccount from "./pages/MerchantAccount";
 import MerchantCredentials from "./pages/MerchantCredentials";
 import MerchantTeam from "./pages/MerchantTeam";
 import AdminMerchants from "./pages/AdminMerchants";
+import AdminMerchantPayin from "./pages/AdminMerchantPayin";
+import AdminBanks from "./pages/AdminBanks";
+import ChangePassword from "./pages/ChangePassword";
+import MfaSetup from "./pages/MfaSetup";
 
 
 
 function ProtectedRoute({children}){
   const token = localStorage.getItem("user");
-  return token?children:<Navigate to="/" />
+  if(!token) return <Navigate to="/" />
+  // A temporary password must be replaced before any other screen opens.
+  if(localStorage.getItem("mustChangePassword")==="1") return <Navigate to="/change-password" />
+  // Two-factor required by an admin must be set up before any other screen opens.
+  if(localStorage.getItem("mfaSetupRequired")==="1") return <Navigate to="/mfa-setup" />
+  return children
 }
 
 function currentRole(){
@@ -43,6 +52,8 @@ function App(){
         
         <Route path="/" element={<Login />} />
         <Route path="/signup" element={<MerchantSignup />} />
+        <Route path="/change-password" element={<ChangePassword />} />
+        <Route path="/mfa-setup" element={<MfaSetup />} />
 
         <Route element={
           <ProtectedRoute>
@@ -58,6 +69,8 @@ function App(){
           <Route path="/payment-code" element={<RoleRoute roles={["admin"]}><AdminPaymentCode /></RoleRoute>} />
           <Route path="/webhooks" element={<RoleRoute roles={["admin"]}><Webhooks /></RoleRoute>} />
           <Route path="/admin/merchants" element={<RoleRoute roles={["admin"]}><AdminMerchants /></RoleRoute>} />
+          <Route path="/admin/merchants/:id/payin" element={<RoleRoute roles={["admin"]}><AdminMerchantPayin /></RoleRoute>} />
+          <Route path="/admin/banks" element={<RoleRoute roles={["admin"]}><AdminBanks /></RoleRoute>} />
           <Route path="/merchant" element={<RoleRoute roles={["merchant"]}><MerchantAccount /></RoleRoute>} />
           <Route path="/merchant/credentials" element={<RoleRoute roles={["merchant"]}><MerchantCredentials /></RoleRoute>} />
           <Route path="/merchant/team" element={<RoleRoute roles={["merchant"]}><MerchantTeam /></RoleRoute>} />

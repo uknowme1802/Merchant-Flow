@@ -18,8 +18,11 @@ router.patch("/banks/:id", validateObjectId("id"), validate(schemas.updateBank),
 router.post("/banks/:id/verify", validateObjectId("id"), bank.verifyBank);
 router.delete("/banks/:id", validateObjectId("id"), bank.deleteBank);
 
+router.post("/bank-mappings/bulk", validate(schemas.bulkBankMapping), bank.bulkMap);
+
 router.get("/merchants/:id/banks", validateObjectId("id"), bank.listMappings);
 router.post("/merchants/:id/banks", validateObjectId("id"), validate(schemas.addBankMapping), bank.addMapping);
+router.patch("/merchants/:id/banks/:mappingId", validateObjectId("id"), validateObjectId("mappingId"), validate(schemas.updateBankMapping), bank.updateMapping);
 router.delete("/merchants/:id/banks/:mappingId", validateObjectId("id"), validateObjectId("mappingId"), bank.removeMapping);
 
 module.exports = router;

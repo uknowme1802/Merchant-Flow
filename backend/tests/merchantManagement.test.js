@@ -5,6 +5,8 @@ jest.mock("../models/Merchant", () => require("./helpers/mockModels").Merchant);
 jest.mock("../models/User", () => require("./helpers/mockModels").User);
 jest.mock("../models/MerchantCredential", () => require("./helpers/mockModels").MerchantCredential);
 jest.mock("../models/AuditLog", () => require("./helpers/mockModels").AuditLog);
+jest.mock("../models/BankAccount", () => require("./helpers/mockModels").BankAccount);
+jest.mock("../models/MerchantBankMapping", () => require("./helpers/mockModels").MerchantBankMapping);
 
 const request = require("supertest");
 const app = require("../app");
@@ -348,5 +350,294 @@ describe("Merchant List", () => {
         const found = await admin("get", "/api/admin/merchants?search=zeta_shop");
         expect(found.body.total).toBe(1);
         expect(found.body.data[0].mode).toBe("production");
+    });
+});
+
+describe("a merchant's logins, as the admin sees them", () => {
+    test("lists the team without secrets, and reset password can target a member", async () => {
+        const { body: created } = await create();
+        const id = created.merchant.id;
+        await User.create({
+            email: "dev@acme.example", password: "hashed-value", role: "merchant",
+            merchantId: (await Merchant.findOne({ mid: created.merchant.mid }))._id, merchantRole: "developer"
+        });
+
+        const team = await admin("get", `/api/admin/merchants/${id}/team`);
+        expect(team.statusCode).toBe(200);
+        expect(team.body.data.map((m) => m.merchantRole)).toEqual(["owner", "developer"]);
+        expect(team.body.data[0]).toMatchObject({ username: "acme_owner", mustChangePassword: true, mfaEnabled: false });
+        expect(JSON.stringify(team.body)).not.toContain("hashed-value");
+
+        const dev = team.body.data[1];
+        const reset = await admin("post", `/api/admin/merchants/${id}/reset-password`).send({ userId: dev.id });
+        expect(reset.statusCode).toBe(200);
+        expect(reset.body.email).toBe("dev@acme.example");
+        expect((await login("dev@acme.example", reset.body.temporaryPassword)).statusCode).toBe(200);
+    });
+
+    test("only admins, and unknown merchants are a 404", async () => {
+        expect((await admin("get", `/api/admin/merchants/${"d".repeat(24)}/team`)).statusCode).toBe(404);
+        const { body: created } = await create();
+        const res = await request(app).get(`/api/admin/merchants/${created.merchant.id}/team`)
+            .set("Authorization", `Bearer ${userToken()}`);
+        expect(res.statusCode).toBe(403);
+    });
+
+    test("a reset closes the member's open session at once", async () => {
+        const { body: created } = await create();
+        const { body: session } = await login("acme_owner", created.temporaryPassword);
+
+        await admin("post", `/api/admin/merchants/${created.merchant.id}/reset-password`).send({});
+
+        const stale = await request(app).post("/api/auth/change-password")
+            .set("Authorization", `Bearer ${session.accessToken}`)
+            .send({ currentPassword: created.temporaryPassword, newPassword: "BrandNewPass9" });
+        expect(stale.statusCode).toBe(401);
+    });
+});
+
+describe("two-factor login", () => {
+    test("also reports the username and a pending password change", async () => {
+        const { authenticator } = require("otplib");
+        const { body: created } = await create();
+        const owner = await User.findOne({ username: "acme_owner" });
+        const secret = authenticator.generateSecret();
+        owner.twoFactor = { enabled: true, secret };
+
+        const first = await login("acme_owner", created.temporaryPassword);
+        expect(first.body.twoFactorRequired).toBe(true);
+
+        const res = await request(app).post("/api/auth/2fa/verify-login")
+            .send({ pendingToken: first.body.pendingToken, token: authenticator.generate(secret) });
+        expect(res.statusCode).toBe(200);
+        expect(res.body.mustChangePassword).toBe(true);
+        expect(res.body.user).toMatchObject({ username: "acme_owner", role: "merchant" });
+    });
+});
+
+describe("signing up with a username", () => {
+    const { validSignup } = require("./helpers/merchantFlow");
+    const signup = (overrides) => request(app).post("/api/merchant/signup").send(validSignup(overrides));
+
+    test("the owner can log in with the username chosen at sign-up", async () => {
+        expect((await signup({ username: "Acme_Boss" })).statusCode).toBe(201);
+
+        const owner = await User.findOne({ email: "owner@acme.example" });
+        expect(owner.username).toBe("acme_boss");
+        expect((await login("acme_boss", "StrongPass123")).statusCode).toBe(200);
+        expect((await login("ACME_BOSS", "StrongPass123")).statusCode).toBe(200);
+
+        const list = await admin("get", "/api/admin/merchants?search=acme_boss");
+        expect(list.body.data[0].username).toBe("acme_boss");
+    });
+
+    test("a username is required, must be valid and must be free", async () => {
+        expect((await signup({ username: undefined })).statusCode).toBe(400);
+        expect((await signup({ username: "no" })).statusCode).toBe(400);
+        expect((await signup({ username: "bad name!" })).statusCode).toBe(400);
+
+        expect((await signup({ username: "taken_name" })).statusCode).toBe(201);
+        const clash = await signup({ email: "second@acme.example", username: "taken_name" });
+        expect(clash.statusCode).toBe(409);
+        expect(clash.body.message).toMatch(/username/i);
+        expect(await Merchant.countDocuments({})).toBe(1);
+    });
+});
+
+describe("suspending a merchant signs its logins out", () => {
+    const setup = async () => {
+        const { body: created } = await create();
+        const first = await login("acme_owner", created.temporaryPassword);
+        const changed = await request(app).post("/api/auth/change-password")
+            .set("Authorization", `Bearer ${first.body.accessToken}`)
+            .send({ currentPassword: created.temporaryPassword, newPassword: "OwnerOwnPass9" });
+        return { id: created.merchant.id, mid: created.merchant.mid, ...changed.body };
+    };
+    const me = (token) => request(app).get("/api/merchant/me").set("Authorization", `Bearer ${token}`);
+
+    test("the open session, refresh and login all stop, and come back on reactivation", async () => {
+        const { id, accessToken, refreshToken } = await setup();
+        expect((await me(accessToken)).statusCode).toBe(200);
+
+        await admin("post", `/api/admin/merchants/${id}/suspend`).send({ reason: "chargeback spike" });
+
+        expect((await me(accessToken)).statusCode).toBe(401);
+        expect((await request(app).post("/api/auth/refresh").send({ token: refreshToken })).statusCode).toBe(403);
+        const refused = await login("acme_owner", "OwnerOwnPass9");
+        expect(refused.statusCode).toBe(403);
+        expect(refused.body.code).toBe("MERCHANT_SUSPENDED");
+        expect(refused.body.accessToken).toBeUndefined();
+
+        await admin("post", `/api/admin/merchants/${id}/reactivate`).send({});
+        const again = await login("acme_owner", "OwnerOwnPass9");
+        expect(again.statusCode).toBe(200);
+        expect((await me(again.body.accessToken)).statusCode).toBe(200);
+    });
+
+    test("a token that survived a restart is still refused on the merchant pages", async () => {
+        const { id } = await setup();
+        await admin("post", `/api/admin/merchants/${id}/suspend`).send({ reason: "review" });
+
+        require("../utils/sessionRevocation").reset();   // what a restart does to the in-memory state
+        const owner = await User.findOne({ username: "acme_owner" });
+        expect((await me(require("./helpers/merchantFlow").tokenFor(owner))).statusCode).toBe(401);
+    });
+
+    test("a wrong password does not reveal that the merchant is suspended", async () => {
+        const { id } = await setup();
+        await admin("post", `/api/admin/merchants/${id}/suspend`).send({ reason: "review" });
+        const res = await login("acme_owner", "not-the-password");
+        expect(res.statusCode).toBe(401);
+        expect(res.body.code).toBeUndefined();
+    });
+});
+
+describe("Delete and Force Delete", () => {
+    const { BankAccount, MerchantBankMapping } = require("./helpers/mockModels");
+
+    const setup = async () => {
+        const { body: created } = await create();
+        const id = created.merchant.id;
+        await admin("post", `/api/admin/merchants/${id}/credentials`).send();
+        const bank = await admin("post", "/api/admin/banks").send({
+            holderName: "Test Holder", bankName: "TEST BANK", accountNumber: "111122223333", ifsc: "TEST0000001", upiId: "one@testbank"
+        });
+        await admin("post", `/api/admin/merchants/${id}/banks`).send({ bankId: bank.body.bank.id });
+        return { id, mid: created.merchant.mid, password: created.temporaryPassword };
+    };
+
+    test("Delete hides the merchant, revokes its keys and locks its logins out, but erases nothing", async () => {
+        const { id, password } = await setup();
+        const { body: session } = await login("acme_owner", password);
+
+        const res = await admin("post", `/api/admin/merchants/${id}/delete`).send({ reason: "Closed at the owner's request" });
+        expect(res.statusCode).toBe(200);
+        expect(res.body.merchant.status).toBe("deleted");
+
+        expect((await admin("get", "/api/admin/merchants")).body.total).toBe(0);
+        const filtered = await admin("get", "/api/admin/merchants?status=deleted");
+        expect(filtered.body.total).toBe(1);
+
+        expect(MerchantCredential.__docs().every((c) => c.status === "revoked")).toBe(true);
+        expect((await login("acme_owner", password)).statusCode).toBe(403);
+        const stale = await request(app).post("/api/auth/change-password")
+            .set("Authorization", `Bearer ${session.accessToken}`)
+            .send({ currentPassword: password, newPassword: "BrandNewPass9" });
+        expect(stale.statusCode).toBe(401);
+
+        // Still there: the merchant, its login and its mapping.
+        expect(await Merchant.countDocuments({})).toBe(1);
+        expect(await User.countDocuments({})).toBe(1);
+        expect(await MerchantBankMapping.countDocuments({})).toBe(1);
+
+        const entry = AuditLog.__docs().find((e) => e.action === "merchant.deleted");
+        expect(entry.metadata).toMatchObject({ from: "active", to: "deleted", reason: "Closed at the owner's request" });
+    });
+
+    test("Delete needs a reason, works once, and a deleted merchant cannot be approved or reactivated", async () => {
+        const { id } = await setup();
+        expect((await admin("post", `/api/admin/merchants/${id}/delete`).send({})).statusCode).toBe(400);
+        expect((await admin("post", `/api/admin/merchants/${id}/delete`).send({ reason: "duplicate" })).statusCode).toBe(200);
+        expect((await admin("post", `/api/admin/merchants/${id}/delete`).send({ reason: "again" })).statusCode).toBe(409);
+        expect((await admin("post", `/api/admin/merchants/${id}/reactivate`).send({})).statusCode).toBe(409);
+        expect((await admin("post", `/api/admin/merchants/${id}/approve`).send({})).statusCode).toBe(409);
+    });
+
+    test("Force Delete removes the merchant, its logins, keys and mappings, and keeps the bank and the audit trail", async () => {
+        const { id, mid } = await setup();
+        const other = await create({ email: "b@acme.example", username: "other_owner", businessName: "Other Co" });
+
+        const res = await admin("post", `/api/admin/merchants/${id}/force-delete`).send({ confirmMid: mid });
+        expect(res.statusCode).toBe(200);
+        expect(res.body.removed).toEqual({ logins: 1, credentials: 1, mappings: 1 });
+
+        expect(await Merchant.countDocuments({})).toBe(1);
+        expect((await Merchant.findOne({})).mid).toBe(other.body.merchant.mid);
+        expect(await User.countDocuments({ username: "acme_owner" })).toBe(0);
+        expect(await User.countDocuments({ username: "other_owner" })).toBe(1);
+        expect(await MerchantCredential.countDocuments({})).toBe(0);
+        expect(await MerchantBankMapping.countDocuments({})).toBe(0);
+        expect(await BankAccount.countDocuments({})).toBe(1);
+
+        // The email and username are free again.
+        expect((await create()).statusCode).toBe(201);
+
+        const logs = await admin("get", "/api/admin/audit-logs?action=merchant.force_deleted");
+        expect(logs.body.data[0]).toMatchObject({ mid, metadata: { businessName: "Acme Traders" } });
+    });
+
+    test("Force Delete needs the typed MID, also works on a deleted merchant, and is admin only", async () => {
+        const { id, mid } = await setup();
+        expect((await admin("post", `/api/admin/merchants/${id}/force-delete`).send({ confirmMid: "mid_wrong" })).statusCode).toBe(400);
+        expect((await admin("post", `/api/admin/merchants/${id}/force-delete`).send({})).statusCode).toBe(400);
+        expect(await Merchant.countDocuments({})).toBe(1);
+
+        const denied = await request(app).post(`/api/admin/merchants/${id}/force-delete`)
+            .set("Authorization", `Bearer ${userToken()}`).send({ confirmMid: mid });
+        expect(denied.statusCode).toBe(403);
+        expect((await request(app).post(`/api/admin/merchants/${id}/delete`)
+            .set("Authorization", `Bearer ${userToken()}`).send({ reason: "nope" })).statusCode).toBe(403);
+
+        await admin("post", `/api/admin/merchants/${id}/delete`).send({ reason: "closing" });
+        expect((await admin("post", `/api/admin/merchants/${id}/force-delete`).send({ confirmMid: mid })).statusCode).toBe(200);
+        expect((await admin("post", `/api/admin/merchants/${id}/force-delete`).send({ confirmMid: mid })).statusCode).toBe(404);
+    });
+});
+
+describe("the 2FA switch of a merchant", () => {
+    test("an admin can turn the owner's two-factor off, but not on", async () => {
+        const { body: created } = await create();
+        const id = created.merchant.id;
+        expect((await admin("post", `/api/admin/merchants/${id}/disable-mfa`)).statusCode).toBe(409);
+
+        (await User.findOne({ username: "acme_owner" })).twoFactor = { enabled: true, secret: "TOPSECRET" };
+        expect((await admin("get", "/api/admin/merchants")).body.data[0].mfaEnabled).toBe(true);
+
+        const res = await admin("post", `/api/admin/merchants/${id}/disable-mfa`);
+        expect(res.statusCode).toBe(200);
+        expect((await admin("get", "/api/admin/merchants")).body.data[0].mfaEnabled).toBe(false);
+
+        const entry = AuditLog.__docs().find((e) => e.action === "merchant.mfa_disabled");
+        expect(entry.metadata).toMatchObject({ mid: created.merchant.mid, email: "owner@acme.example" });
+        expect(JSON.stringify(AuditLog.__docs())).not.toContain("TOPSECRET");
+
+        const denied = await request(app).post(`/api/admin/merchants/${id}/disable-mfa`).set("Authorization", `Bearer ${userToken()}`);
+        expect(denied.statusCode).toBe(403);
+    });
+});
+
+describe("audit entries name the merchant", () => {
+    test("each row carries the MID", async () => {
+        const { body: created } = await create();
+        const logs = await admin("get", "/api/admin/audit-logs");
+        const row = logs.body.data.find((l) => l.action === "merchant.created_by_admin");
+        expect(row.mid).toBe(created.merchant.mid);
+    });
+});
+
+describe("the 2FA switch of a merchant: requiring two-factor", () => {
+    test("on: the owner is signed out and must set it up at next login; off clears it", async () => {
+        const { body: created } = await create();
+        const id = created.merchant.id;
+        const { body: session } = await login("acme_owner", created.temporaryPassword);
+
+        const on = await admin("post", `/api/admin/merchants/${id}/require-mfa`);
+        expect(on.statusCode).toBe(200);
+        expect((await admin("get", "/api/admin/merchants")).body.data[0]).toMatchObject({ mfaRequired: true, mfaEnabled: false });
+        expect((await admin("post", `/api/admin/merchants/${id}/require-mfa`)).statusCode).toBe(409);
+
+        const stale = await request(app).post("/api/auth/change-password")
+            .set("Authorization", `Bearer ${session.accessToken}`)
+            .send({ currentPassword: created.temporaryPassword, newPassword: "BrandNewPass9" });
+        expect(stale.statusCode).toBe(401);
+        expect((await login("acme_owner", created.temporaryPassword)).body.mfaSetupRequired).toBe(true);
+        expect(AuditLog.__docs().map((e) => e.action)).toContain("merchant.mfa_required");
+
+        expect((await admin("post", `/api/admin/merchants/${id}/disable-mfa`)).statusCode).toBe(200);
+        expect((await admin("get", "/api/admin/merchants")).body.data[0]).toMatchObject({ mfaRequired: false, mfaEnabled: false });
+        expect((await login("acme_owner", created.temporaryPassword)).body.mfaSetupRequired).toBe(false);
+
+        const denied = await request(app).post(`/api/admin/merchants/${id}/require-mfa`).set("Authorization", `Bearer ${userToken()}`);
+        expect(denied.statusCode).toBe(403);
     });
 });

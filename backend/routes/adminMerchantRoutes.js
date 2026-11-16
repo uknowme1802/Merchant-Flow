@@ -21,8 +21,13 @@ router.get("/merchants/:id", validateObjectId("id"), admin.getMerchant);
 // Management: create, Edit Config, reset password, the Keys action and the sandbox/production switch.
 router.post("/merchants", validate(schemas.adminCreateMerchant), manage.createMerchant);
 router.patch("/merchants/:id/config", validateObjectId("id"), validate(schemas.merchantConfig), manage.updateConfig);
+router.get("/merchants/:id/team", validateObjectId("id"), manage.listTeam);
 router.post("/merchants/:id/reset-password", validateObjectId("id"), validate(schemas.resetMerchantPassword), manage.resetPassword);
 router.post("/merchants/:id/credentials", validateObjectId("id"), manage.generateKey);
+router.post("/merchants/:id/delete", validateObjectId("id"), validate(schemas.merchantReason), manage.deleteMerchant);
+router.post("/merchants/:id/force-delete", validateObjectId("id"), validate(schemas.forceDeleteMerchant), manage.forceDeleteMerchant);
+router.post("/merchants/:id/disable-mfa", validateObjectId("id"), manage.disableMfa);
+router.post("/merchants/:id/require-mfa", validateObjectId("id"), manage.requireMfa);
 router.post("/merchants/:id/switch-mode", validateObjectId("id"), validate(schemas.switchMerchantMode), manage.switchMode);
 
 // Decisions. Reject and suspend must give a reason; approve and reactivate may add a note.

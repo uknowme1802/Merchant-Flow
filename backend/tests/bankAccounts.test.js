@@ -167,3 +167,115 @@ describe("merchant bank mapping", () => {
         expect(await BankAccount.countDocuments({})).toBe(0);
     });
 });
+
+describe("bulk bank mapping", () => {
+    const bulk = (body) => asAdmin("post", "/api/admin/bank-mappings/bulk").send(body);
+    const setup = async () => {
+        const first = await registerMerchant(app);
+        const second = await registerMerchant(app, { email: "other@acme.example" });
+        const a = await createBank();
+        const b = await createBank({ ...harshdeep, accountNumber: "111122223333", upiId: "second@ysbank" });
+        return {
+            merchantIds: [String(first.merchant._id), String(second.merchant._id)],
+            bankIds: [a.body.bank.id, b.body.bank.id],
+            first
+        };
+    };
+
+    test("maps every chosen bank to every chosen merchant", async () => {
+        const { merchantIds, bankIds, first } = await setup();
+
+        const res = await bulk({ merchantIds, bankIds });
+        expect(res.statusCode).toBe(201);
+        expect(res.body).toMatchObject({ created: 4, skipped: 0 });
+        expect(await MerchantBankMapping.countDocuments({})).toBe(4);
+
+        const list = await asAdmin("get", `/api/admin/merchants/${first.merchant._id}/banks`);
+        expect(list.body.data).toHaveLength(2);
+
+        const entry = AuditLog.__docs().find((d) => d.action === "bank.bulk_mapped");
+        expect(entry.metadata).toMatchObject({ created: 4, skipped: 0 });
+        expect(entry.metadata.mids).toHaveLength(2);
+    });
+
+    test("pairs that already exist are skipped, so it can be repeated", async () => {
+        const { merchantIds, bankIds } = await setup();
+        await asAdmin("post", `/api/admin/merchants/${merchantIds[0]}/banks`).send({ bankId: bankIds[0] });
+
+        const res = await bulk({ merchantIds, bankIds });
+        expect(res.body).toMatchObject({ created: 3, skipped: 1 });
+
+        const again = await bulk({ merchantIds, bankIds });
+        expect(again.statusCode).toBe(200);
+        expect(again.body).toMatchObject({ created: 0, skipped: 4 });
+        expect(await MerchantBankMapping.countDocuments({})).toBe(4);
+    });
+
+    test("an unknown merchant or bank is a 404 and nothing is mapped", async () => {
+        const { merchantIds, bankIds } = await setup();
+
+        expect((await bulk({ merchantIds: [...merchantIds, "d".repeat(24)], bankIds })).statusCode).toBe(404);
+        expect((await bulk({ merchantIds, bankIds: [...bankIds, "d".repeat(24)] })).statusCode).toBe(404);
+        expect(await MerchantBankMapping.countDocuments({})).toBe(0);
+    });
+
+    test.each([
+        ["no merchants", (s) => ({ merchantIds: [], bankIds: s.bankIds })],
+        ["no banks", (s) => ({ merchantIds: s.merchantIds, bankIds: [] })],
+        ["a malformed id", (s) => ({ merchantIds: ["nope"], bankIds: s.bankIds })],
+        ["the same merchant twice", (s) => ({ merchantIds: [s.merchantIds[0], s.merchantIds[0]], bankIds: s.bankIds })]
+    ])("rejects %s", async (_label, build) => {
+        expect((await bulk(build(await setup()))).statusCode).toBe(400);
+    });
+
+    test("only admins can bulk map", async () => {
+        const { merchantIds, bankIds } = await setup();
+        const res = await request(app).post("/api/admin/bank-mappings/bulk")
+            .set("Authorization", `Bearer ${userToken()}`).send({ merchantIds, bankIds });
+        expect(res.statusCode).toBe(403);
+    });
+});
+
+describe("the Active switch of a mapping", () => {
+    const setup = async () => {
+        const { merchant } = await registerMerchant(app);
+        const { body } = await createBank();
+        const mapped = await asAdmin("post", `/api/admin/merchants/${merchant._id}/banks`).send({ bankId: body.bank.id });
+        return { merchant, url: `/api/admin/merchants/${merchant._id}/banks/${mapped.body.mapping.id}` };
+    };
+
+    test("turns a mapping off and on again, and audits each change", async () => {
+        const { merchant, url } = await setup();
+
+        const off = await asAdmin("patch", url).send({ active: false });
+        expect(off.statusCode).toBe(200);
+        expect(off.body.mapping.active).toBe(false);
+        expect(off.body.mapping.bank.bankName).toBe("YES BANK");
+
+        const list = await asAdmin("get", `/api/admin/merchants/${merchant._id}/banks`);
+        expect(list.body.data[0].active).toBe(false);
+
+        expect((await asAdmin("patch", url).send({ active: true })).body.mapping.active).toBe(true);
+
+        const entries = AuditLog.__docs().filter((d) => d.action === "bank.mapping_updated");
+        expect(entries).toHaveLength(2);
+        expect(entries[0].metadata).toMatchObject({ before: { active: true }, after: { active: false } });
+    });
+
+    test("setting the value it already has writes no audit entry", async () => {
+        const { url } = await setup();
+        expect((await asAdmin("patch", url).send({ active: true })).statusCode).toBe(200);
+        expect(AuditLog.__docs().some((d) => d.action === "bank.mapping_updated")).toBe(false);
+    });
+
+    test("needs a real boolean, the right merchant and an admin", async () => {
+        const { url } = await setup();
+        const other = await registerMerchant(app, { email: "other@acme.example" });
+
+        expect((await asAdmin("patch", url).send({ active: "no" })).statusCode).toBe(400);
+        expect((await asAdmin("patch", url).send({})).statusCode).toBe(400);
+        expect((await asAdmin("patch", url.replace(/merchants\/[a-f0-9]+/, `merchants/${other.merchant._id}`)).send({ active: false })).statusCode).toBe(404);
+        const denied = await request(app).patch(url).set("Authorization", `Bearer ${userToken()}`).send({ active: false });
+        expect(denied.statusCode).toBe(403);
+    });
+});

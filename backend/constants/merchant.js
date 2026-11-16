@@ -1,6 +1,8 @@
 // Shared constants for the merchant platform (Phase 1).
 
-const MERCHANT_STATUS = ["pending", "active", "suspended", "rejected"];
+// "deleted" is a soft delete: the merchant is hidden from the list, its logins are signed out and
+// its keys are revoked, but the records stay until an admin force-deletes them.
+const MERCHANT_STATUS = ["pending", "active", "suspended", "rejected", "deleted"];
 
 // The only status changes an admin can make, each with the one status it may start from.
 // Anything else is refused, so a rejected merchant can never be "approved" by a stray

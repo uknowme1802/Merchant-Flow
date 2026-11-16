@@ -256,7 +256,7 @@ describe("admin: approval decisions", () => {
         expect(res.body.total).toBe(1);
         expect(res.body.data[0].action).toBe("merchant.approved");
 
-        const denied = await request(app).get("/api/admin/audit-logs").set("Authorization", `Bearer ${tokenFor({ _id: "x", email: "u@u.com", role: "user" })}`);
+        const denied = await request(app).get("/api/admin/audit-logs").set("Authorization", `Bearer ${tokenFor({ _id: "x", email: "u@u.com", role: "agent" })}`);
         expect(denied.statusCode).toBe(403);
     });
 });

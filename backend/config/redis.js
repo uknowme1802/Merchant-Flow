@@ -9,6 +9,11 @@ try {
     redis = new Redis(process.env.REDIS_URL, {
       tls: process.env.REDIS_URL.startsWith("rediss://") ? {} : undefined,
       maxRetriesPerRequest: 3,
+      // While Redis is unreachable, fail a command at once instead of holding it until the next
+      // reconnect attempts finish. Without this a cache read waits through three back-off delays
+      // (up to 10 seconds each) and every page that uses the cache hangs. The cache is optional,
+      // so callers just carry on without it.
+      enableOfflineQueue: false,
 
       // Never give up: a managed Redis (Upstash) can be briefly unreachable at boot or restart, and
       // a client that stops retrying stays dead until the whole server is restarted. Requests fail

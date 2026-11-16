@@ -74,6 +74,8 @@ const createFakeModel = (name, { uniques = [], defaults = () => ({}), finalize =
         // `save` exists because services mutate a loaded document and call save(); the document
         // is the stored object itself, so changes are already persisted.
         Object.defineProperty(data, "save", { value: async () => data, enumerable: false, configurable: true });
+        // Mongoose needs to be told when a nested object changed; here every change is already stored.
+        Object.defineProperty(data, "markModified", { value: () => {}, enumerable: false, configurable: true });
         return data;
     };
 
@@ -107,6 +109,11 @@ const createFakeModel = (name, { uniques = [], defaults = () => ({}), finalize =
             const doc = docs.find((d) => matches(d, filter));
             if (doc) Object.assign(doc, update.$set || {});
             return doc || null;
+        },
+        deleteMany: async (filter) => {
+            const before = docs.length;
+            docs = docs.filter((d) => !matches(d, filter));
+            return { deletedCount: before - docs.length };
         },
         deleteOne: async (filter) => {
             const index = docs.findIndex((d) => matches(d, filter));

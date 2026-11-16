@@ -21,6 +21,10 @@ const PORT = process.env.PORT || 5000;
 
 connectDB();
 
+// Disabled users stay signed out across a restart (the query waits for the connection above).
+require("./utils/sessionRevocation").hydrate(require("./models/User"))
+    .catch((err) => logger.warn("Could not load disabled users", { error: err.message }));
+
 const app = require("./app");
 const server = http.createServer(app);
 initSocket(server);

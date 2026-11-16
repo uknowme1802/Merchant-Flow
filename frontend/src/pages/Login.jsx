@@ -22,9 +22,25 @@ export default function Login(){
  const completeLogin = (res) => {
   const userData = {
     email: res.data.user.email,
-    role: res.data.user.role
+    role: res.data.user.role,
+    username: res.data.user.username ?? null
   };
   login(userData, res.data.accessToken, res.data.refreshToken)
+
+  // A temporary password issued by an admin must be replaced before anything else works.
+  if(res.data.mustChangePassword){
+    localStorage.setItem("mustChangePassword", "1");
+    navigate("/change-password");
+    return;
+  }
+
+  // An admin requires two-factor and it is not set up yet.
+  if(res.data.mfaSetupRequired){
+    localStorage.setItem("mfaSetupRequired", "1");
+    navigate("/mfa-setup");
+    return;
+  }
+
   toast.success("Login Successfull!")
   navigate(res.data.user.role === "merchant" ? "/merchant" : "/dashboard");
  }
@@ -32,7 +48,7 @@ export default function Login(){
  const handleLogin = async ()=>{
 
   if(!email|| !password){
-    toast.error("Please enter the email and Password");
+    toast.error("Please enter your email or username and password");
     return;
   }
 
@@ -116,7 +132,8 @@ export default function Login(){
 
     <input
       className="w-full mb-4 p-3 border rounded"
-      placeholder="Email"
+      placeholder="Email or username"
+      autoComplete="username"
       onChange={(e)=> setEmail(e.target.value)}
     />
     <div className="relative w-full mb-4">

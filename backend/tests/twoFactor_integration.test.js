@@ -21,7 +21,7 @@ describe("2fa end-to-end flow",()=>{
             _id: "user-id-123",
             id: "user-id-123",
             email: "twofa@test.com",
-            role: "user",
+            role: "agent",
             password: await bcrypt.hash("Password123!",10),
             refreshToken: null,
             twoFactor: { enabled: true, secret, tempSecret: null },
@@ -66,7 +66,7 @@ describe("2fa end-to-end flow",()=>{
         const mockUser = {
             _id: "user-id-456",
             email: "twofa@test.com",
-            role: "user",
+            role: "agent",
             twoFactor: {enabled: true, secret, tempSecret: null },
             save: jest.fn().mockResolvedValue(true)
         };
@@ -94,7 +94,7 @@ describe("2fa end-to-end flow",()=>{
         const mockUser = {
             _id: "user-id-789",
             email: "no2fa@test.com",
-            role: "user",
+            role: "agent",
             password: await bcrypt.hash("Password123!", 10),
             refreshToken:null,
             twoFactor: { enabled: false, secret: null, tempSecret: null },

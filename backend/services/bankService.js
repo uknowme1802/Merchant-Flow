@@ -150,6 +150,45 @@ const addMapping = async ({ merchantId, bankId, minPaise, maxPaise, dailyLimitPa
     }
 };
 
+// Bulk Payin Meta Mapping: maps every bank to every merchant. A pair that is already mapped is
+// skipped, so the call can be repeated safely. Unknown banks are refused before anything is saved.
+const MAX_BULK_PAIRS = 500;
+
+const bulkMap = async ({ merchants, bankIds, adminId }) => {
+    if (merchants.length * bankIds.length > MAX_BULK_PAIRS) {
+        throw new ApiError(400, `Too many mappings in one request (the limit is ${MAX_BULK_PAIRS})`);
+    }
+
+    const banks = await BankAccount.find({ _id: { $in: bankIds } });
+    if (banks.length !== bankIds.length) throw new ApiError(404, "One or more bank accounts were not found");
+
+    let created = 0;
+    let skipped = 0;
+    for (const merchant of merchants) {
+        for (const bank of banks) {
+            try {
+                await MerchantBankMapping.create({ merchantId: merchant._id, bankId: bank._id, createdBy: adminId });
+                created++;
+            } catch (err) {
+                if (err.code !== 11000) throw err;
+                skipped++;
+            }
+        }
+    }
+    return { created, skipped, banks };
+};
+
+// The Active switch on the PAYIN page: an inactive mapping stays in the list but is not used.
+const setMappingActive = async (merchantId, mappingId, active) => {
+    const mapping = await MerchantBankMapping.findOne({ _id: mappingId, merchantId });
+    if (!mapping) throw new ApiError(404, "Mapping not found");
+
+    const before = mapping.active;
+    mapping.active = active;
+    await mapping.save();
+    return { mapping, bank: await BankAccount.findById(mapping.bankId), before };
+};
+
 const removeMapping = async (merchantId, mappingId) => {
     const mapping = await MerchantBankMapping.findOne({ _id: mappingId, merchantId });
     if (!mapping) throw new ApiError(404, "Mapping not found");
@@ -159,5 +198,5 @@ const removeMapping = async (merchantId, mappingId) => {
 
 module.exports = {
     toBankView, toMappingView, createBank, listBanks, getBank, updateBank, verifyBank,
-    deleteBank, listMappings, addMapping, removeMapping
+    deleteBank, listMappings, addMapping, bulkMap, setMappingActive, removeMapping
 };

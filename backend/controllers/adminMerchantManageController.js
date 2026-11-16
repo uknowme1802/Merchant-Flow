@@ -52,6 +52,11 @@ exports.updateConfig = wrap(async (req, res) => {
     res.json({ success: true, merchant: merchantService.toMerchantView(merchant) });
 });
 
+// GET /api/admin/merchants/:id/team   (the merchant's logins, for the reset password action)
+exports.listTeam = wrap(async (req, res) => {
+    res.json({ success: true, data: await merchantService.listTeamForAdmin(req.params.id) });
+});
+
 // POST /api/admin/merchants/:id/reset-password
 exports.resetPassword = wrap(async (req, res) => {
     const { merchant, user, temporaryPassword } = await merchantService.resetMerchantPassword({
@@ -96,6 +101,73 @@ exports.generateKey = wrap(async (req, res) => {
         previousKeyExpiresAt: previousKeyExpiresAt || null,
         message: SECRET_NOTICE
     });
+});
+
+// POST /api/admin/merchants/:id/delete   (soft delete; body: { reason })
+exports.deleteMerchant = wrap(async (req, res) => {
+    const { merchant, previousStatus } = await merchantService.deleteMerchant({
+        merchantId: req.params.id,
+        adminId: req.user.id,
+        reason: req.body.reason
+    });
+
+    await recordAudit(req, {
+        action: "merchant.deleted",
+        merchantId: merchant._id,
+        targetType: "merchant",
+        targetId: merchant._id,
+        metadata: { mid: merchant.mid, from: previousStatus, to: merchant.status, reason: req.body.reason }
+    });
+
+    res.json({ success: true, merchant: merchantService.toMerchantView(merchant) });
+});
+
+// POST /api/admin/merchants/:id/force-delete   (permanent; body: { confirmMid })
+exports.forceDeleteMerchant = wrap(async (req, res) => {
+    const { merchant, removed } = await merchantService.forceDeleteMerchant({
+        merchantId: req.params.id,
+        confirmMid: req.body.confirmMid
+    });
+
+    await recordAudit(req, {
+        action: "merchant.force_deleted",
+        merchantId: merchant._id,
+        targetType: "merchant",
+        targetId: merchant._id,
+        metadata: { mid: merchant.mid, businessName: merchant.businessName, status: merchant.status, removed }
+    });
+
+    res.json({ success: true, removed });
+});
+
+// POST /api/admin/merchants/:id/disable-mfa   (the owner's two-factor; an admin can only turn it off)
+exports.disableMfa = wrap(async (req, res) => {
+    const { merchant, user } = await merchantService.disableOwnerMfa(req.params.id);
+
+    await recordAudit(req, {
+        action: "merchant.mfa_disabled",
+        merchantId: merchant._id,
+        targetType: "user",
+        targetId: user._id,
+        metadata: { mid: merchant.mid, email: user.email }
+    });
+
+    res.json({ success: true });
+});
+
+// POST /api/admin/merchants/:id/require-mfa   (the 2FA switch, on)
+exports.requireMfa = wrap(async (req, res) => {
+    const { merchant, user } = await merchantService.requireOwnerMfa(req.params.id);
+
+    await recordAudit(req, {
+        action: "merchant.mfa_required",
+        merchantId: merchant._id,
+        targetType: "user",
+        targetId: user._id,
+        metadata: { mid: merchant.mid, email: user.email }
+    });
+
+    res.json({ success: true });
 });
 
 // POST /api/admin/merchants/:id/switch-mode

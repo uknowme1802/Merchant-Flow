@@ -61,15 +61,42 @@ API.interceptors.response.use(
             // Try a silent refresh once before giving up on the session
             if(original && !original._retried && !isAuthUrl(url)){
                 original._retried = true;
+                let newToken = null;
                 try {
-                    const newToken = await refreshAccessToken();
-                    original.headers.Authorization = `Bearer ${newToken}`;
-                    return API(original);
+                    newToken = await refreshAccessToken();
                 } catch {
                     // fall through to end the session
                 }
+                if (newToken) {
+                    original._refreshed = true;
+                    original.headers.Authorization = `Bearer ${newToken}`;
+                    return API(original);
+                }
+            }
+            // Change password answers 401 for a wrong current password. If that happens with a
+            // token that was just refreshed, the session is fine: let the page show the message.
+            if(original?._refreshed && url?.includes("/auth/change-password")){
+                return Promise.reject(error);
             }
             endSession();
+            return Promise.reject(error);
+        }
+
+        // A temporary password is still in place: the only screen that works is Change password.
+        if(status===403 && error.response?.data?.code === "PASSWORD_CHANGE_REQUIRED"){
+            localStorage.setItem("mustChangePassword", "1");
+            if(window.location.pathname !== "/change-password"){
+                window.location.href = "/change-password";
+            }
+            return Promise.reject(error);
+        }
+
+        // An admin requires two-factor and it is not set up yet: only the setup screen works.
+        if(status===403 && error.response?.data?.code === "MFA_SETUP_REQUIRED"){
+            localStorage.setItem("mfaSetupRequired", "1");
+            if(window.location.pathname !== "/mfa-setup"){
+                window.location.href = "/mfa-setup";
+            }
             return Promise.reject(error);
         }
 
