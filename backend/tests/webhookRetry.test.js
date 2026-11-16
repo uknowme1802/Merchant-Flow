@@ -125,7 +125,7 @@ describe("webhook retries", () => {
             .set("Authorization", `Bearer ${adminToken()}`);
         expect(missing.statusCode).toBe(404);
 
-        const userToken = jwt.sign({ id: "u", email: "u@t.com", role: "user" }, process.env.SECRET);
+        const userToken = jwt.sign({ id: "u", email: "u@t.com", role: "agent" }, process.env.SECRET);
         const denied = await request(app).post("/api/webhooks/deliveries/d4/replay")
             .set("Authorization", `Bearer ${userToken}`);
         expect(denied.statusCode).toBe(403);

@@ -90,7 +90,7 @@ describe("Webhook management (admin-only)", () => {
     });
 
     test("a non-admin user cannot create a webook", async () => {
-        const userToken = buildAccessToken("user-1", "user");
+        const userToken = buildAccessToken("user-1", "agent");
 
         const res = await request(app)
                     .post("/api/webhooks")
@@ -253,7 +253,7 @@ describe("Webhook management (admin-only)", () => {
         test("non-admin users cannot read the delivery log", async () => {
             const res = await request(app)
                 .get("/api/webhooks/deliveries")
-                .set("Authorization", `Bearer ${buildAccessToken("user-1", "user")}`);
+                .set("Authorization", `Bearer ${buildAccessToken("user-1", "agent")}`);
 
             expect(res.statusCode).toBe(403);
             expect(WebhookDelivery.find).not.toHaveBeenCalled();

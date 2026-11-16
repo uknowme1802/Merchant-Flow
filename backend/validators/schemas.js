@@ -3,9 +3,14 @@ const WEBHOOK_EVENTS = require("../constants/webhookEvents");
 const { hasAtMostTwoDecimals } = require("../utils/money");
 const { BUSINESS_TYPES, ENVIRONMENTS, MERCHANT_STATUS, MERCHANT_MODES } = require("../constants/merchant");
 const { IFSC_REGEX, ACCOUNT_NUMBER_REGEX, UPI_ID_REGEX, BANK_STATUS, BANK_METHODS } = require("../constants/bank");
+const { STAFF_ROLES } = require("../constants/roles");
 
 const paise = Joi.number().integer().min(0).max(100000000000);
 const objectId = Joi.string().pattern(/^[a-fA-F0-9]{24}$/);
+
+const username = Joi.string().trim().lowercase().pattern(/^[a-z0-9_]{3,30}$/)
+    .messages({ "string.pattern.base": "username must be 3 to 30 characters: letters, digits and underscore" });
+const email = Joi.string().trim().lowercase().email({ tlds: { allow: false } });
 
 const bankFields = {
     holderName: Joi.string().trim().min(2).max(120),
@@ -79,10 +84,24 @@ module.exports = {
             .error(() => new Error(UTR_MESSAGE))
     }),
 
+    // The Users tab. No password field: the server generates a temporary one.
     createUser: Joi.object({
-        email: Joi.string().trim().lowercase().email({ tlds: { allow: false } }).required(),
-        password: Joi.string().min(8).max(128).required(),
-        role: Joi.string().valid("admin", "user").optional()
+        username: username.required(),
+        email: email.required(),
+        role: Joi.string().valid(...STAFF_ROLES).default("agent")
+    }),
+
+    updateUser: Joi.object({
+        username,
+        email,
+        role: Joi.string().valid(...STAFF_ROLES),
+        disabled: Joi.boolean().strict()
+    }).min(1),
+
+    userListQuery: Joi.object({
+        search: Joi.string().trim().max(100).optional(),
+        page: Joi.number().integer().min(1).default(1),
+        limit: Joi.number().integer().min(1).max(100).default(10)
     }),
 
     createValidPayment: Joi.object({ amount, utr }),
@@ -106,6 +125,8 @@ module.exports = {
         contactPhone: Joi.string().trim().pattern(/^\+?[0-9 ()-]{7,20}$/).required()
             .messages({ "string.pattern.base": "contactPhone must be 7 to 20 digits and may start with +" }),
         email: Joi.string().trim().lowercase().email({ tlds: { allow: false } }).required(),
+        // The owner's login name. Login accepts it in place of the email.
+        username: username.required(),
         password: Joi.string().min(8).max(128).required(),
         kyc: Joi.object({
             registrationNumber: Joi.string().trim().min(3).max(64).required(),
@@ -125,8 +146,7 @@ module.exports = {
         contactPhone: Joi.string().trim().pattern(/^\+?[0-9 ()-]{7,20}$/).required()
             .messages({ "string.pattern.base": "contactPhone must be 7 to 20 digits and may start with +" }),
         email: Joi.string().trim().lowercase().email({ tlds: { allow: false } }).required(),
-        username: Joi.string().trim().lowercase().pattern(/^[a-z0-9_]{3,30}$/).required()
-            .messages({ "string.pattern.base": "username must be 3 to 30 characters: letters, digits and underscore" }),
+        username: username.required(),
         mode: Joi.string().valid(...MERCHANT_MODES).required(),
         remark: Joi.string().trim().max(200).allow("").optional(),
         kyc: Joi.object({
@@ -155,6 +175,11 @@ module.exports = {
         mode: Joi.string().valid(...MERCHANT_MODES).required(),
         confirmMid: Joi.string().trim().required(),
         reason: Joi.string().trim().min(3).max(500).allow("", null).optional()
+    }),
+
+    // Force Delete: the MID must be typed to confirm.
+    forceDeleteMerchant: Joi.object({
+        confirmMid: Joi.string().trim().required()
     }),
 
     credentialEnvironment: Joi.object({
@@ -198,6 +223,15 @@ module.exports = {
         minPaise: paise.allow(null).optional(),
         maxPaise: paise.allow(null).optional(),
         dailyLimitPaise: paise.allow(null).optional()
+    }),
+
+    // The Active switch on the PAYIN page.
+    updateBankMapping: Joi.object({ active: Joi.boolean().strict().required() }),
+
+    // Bulk Payin Meta Mapping: every chosen merchant gets every chosen bank.
+    bulkBankMapping: Joi.object({
+        merchantIds: Joi.array().items(objectId).min(1).max(50).unique().required(),
+        bankIds: Joi.array().items(objectId).min(1).max(50).unique().required()
     }),
 
     auditQuery: Joi.object({

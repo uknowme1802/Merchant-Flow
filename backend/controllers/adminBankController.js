@@ -56,6 +56,34 @@ exports.addMapping = wrap(async (req, res) => {
     res.status(201).json({ success: true, mapping: bankService.toMappingView(mapping, bank) });
 });
 
+// POST /api/admin/bank-mappings/bulk
+exports.bulkMap = wrap(async (req, res) => {
+    const merchants = await merchantService.getMerchantsByIds(req.body.merchantIds);
+    const { created, skipped, banks } = await bankService.bulkMap({
+        merchants, bankIds: req.body.bankIds, adminId: req.user.id
+    });
+
+    await recordAudit(req, {
+        action: "bank.bulk_mapped", targetType: "bank",
+        metadata: { mids: merchants.map((m) => m.mid), bankIds: banks.map((b) => b.bankId), created, skipped }
+    });
+    res.status(created ? 201 : 200).json({ success: true, created, skipped });
+});
+
+// PATCH /api/admin/merchants/:id/banks/:mappingId   body: { active }
+exports.updateMapping = wrap(async (req, res) => {
+    const merchant = await merchantService.getMerchant(req.params.id);
+    const { mapping, bank, before } = await bankService.setMappingActive(merchant._id, req.params.mappingId, req.body.active);
+
+    if (before !== mapping.active) {
+        await recordAudit(req, {
+            action: "bank.mapping_updated", merchantId: merchant._id, targetType: "bank", targetId: mapping.bankId,
+            metadata: { mid: merchant.mid, bankId: bank?.bankId ?? null, before: { active: before }, after: { active: mapping.active } }
+        });
+    }
+    res.json({ success: true, mapping: bankService.toMappingView(mapping, bank) });
+});
+
 exports.removeMapping = wrap(async (req, res) => {
     const merchant = await merchantService.getMerchant(req.params.id);
     const mapping = await bankService.removeMapping(merchant._id, req.params.mappingId);

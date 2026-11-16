@@ -14,4 +14,8 @@ router.post("/refresh", authRateLimiter, validate(schemas.refreshToken), refresh
 router.post("/change-password", authRateLimiter, authMiddleware, validate(schemas.changePassword), changePassword)
 router.post('/logout', authRateLimiter, validate(schemas.logout), logout)
 
+// "Is my session still valid?" The dashboard asks when its tab is opened again, so a user who was
+// disabled, reset or suspended meanwhile lands on the login page without clicking anything.
+router.get("/session", authMiddleware, (req, res) => res.json({ success: true }))
+
 module.exports = router;

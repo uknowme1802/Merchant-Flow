@@ -13,7 +13,7 @@ const User = require("../models/User");
 const Webhook = require("../models/Webhook");
 const app = require("../app");
 
-const token = (id, role = "user") =>
+const token = (id, role = "agent") =>
     jwt.sign({ id, email: "t@test.com", role }, process.env.SECRET, { expiresIn: "15m" });
 
 describe("Input validation (Joi)", () => {
@@ -61,12 +61,12 @@ describe("Input validation (Joi)", () => {
         expect(res.statusCode).toBe(409);
     });
 
-    test("createUser rejects a weak password and a bad email", async () => {
-        const weak = await request(app).post("/api/users")
-            .set("Authorization", `Bearer ${token("a1", "admin")}`).send({ email: "a@b.com", password: "123" });
+    test("createUser rejects a missing username and a bad email", async () => {
+        const noUsername = await request(app).post("/api/users")
+            .set("Authorization", `Bearer ${token("a1", "admin")}`).send({ email: "a@b.com" });
         const badEmail = await request(app).post("/api/users")
-            .set("Authorization", `Bearer ${token("a1", "admin")}`).send({ email: "nope", password: "longenough1" });
-        expect(weak.statusCode).toBe(400);
+            .set("Authorization", `Bearer ${token("a1", "admin")}`).send({ username: "someone", email: "nope" });
+        expect(noUsername.statusCode).toBe(400);
         expect(badEmail.statusCode).toBe(400);
         expect(User).not.toHaveBeenCalled();
     });

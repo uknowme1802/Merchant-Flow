@@ -1,4 +1,5 @@
 const mongoose = require("mongoose");
+const { ROLES, LEGACY_ROLE_ALIASES } = require("../constants/roles");
 
 const userSchema = new mongoose.Schema({
     email: {
@@ -28,8 +29,16 @@ const userSchema = new mongoose.Schema({
     },
     role: {
         type: String,
-        enum: ["admin", "user", "merchant"],
-        default: "user"
+        // The old name "user" is still accepted so a login that has not been migrated yet can be
+        // saved (Mongoose validates the stored role on every save, including at login). The API
+        // only ever writes the current names, and reads the old one as "agent".
+        enum: [...ROLES, ...Object.keys(LEGACY_ROLE_ALIASES)],
+        default: "agent"
+    },
+    // A disabled user cannot log in or refresh, and their open sessions stop at once.
+    disabled: {
+        type: Boolean,
+        default: false
     },
     // Set only for role "merchant": which merchant this login belongs to, and the member's
     // role inside that merchant's team (owner, developer, finance).
@@ -43,6 +52,12 @@ const userSchema = new mongoose.Schema({
         type: String,
         enum: ["owner", "developer", "finance"],
         default: null
+    },
+    // Set by an admin (the MFA switch). While it is on and two-factor is not set up yet, the user
+    // must set it up right after logging in, before anything else works.
+    mfaRequired: {
+        type: Boolean,
+        default: false
     },
     refreshToken: {
         type: String,

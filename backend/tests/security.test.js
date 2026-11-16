@@ -6,7 +6,7 @@ const Transaction = require("../models/Transaction");
 const app = require("../app");
 const { isPrivateAddress, assertPublicUrl } = require("../utils/ssrf");
 
-const token = (id, role = "user") =>
+const token = (id, role = "agent") =>
     jwt.sign({ id, email: "t@test.com", role }, process.env.SECRET, { expiresIn: "15m" });
 
 describe("SSRF guard for webhook URLs", () => {

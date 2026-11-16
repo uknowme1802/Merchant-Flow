@@ -34,7 +34,7 @@ describe("Admin ValidPayment management (GUI-created UTR + amount pairs)",() => 
     })
 
     test("a regular user cannot create a valid payment pair", async()=> {
-        const userToken = buildAccessToken("user-1", "user");
+        const userToken = buildAccessToken("user-1", "agent");
 
         const res = await request(app)
             .post("/api/valid-payments")

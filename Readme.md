@@ -23,7 +23,7 @@ A **full-stack payment analytics platform** with JWT authentication, optional TO
 - Refresh tokens, stored server-side and checked on every refresh
 - Refresh token revocation on logout
 - Password hashing with bcrypt
-- Role-based access control (**Admin / User**)
+- Role-based access control (**Admin / Agent / Merchant**)
 - Protected API routes + frontend route guards
 - Persistent authentication state
 - **Two-factor authentication (TOTP)** - optional per user; QR-code setup (otplib + qrcode), enable/disable from the Security page, and a second verification step at login
@@ -659,9 +659,13 @@ POST /api/valid-payments
 ## Users (Admin)
 
 ```http
-GET  /api/users
-POST /api/users
+GET   /api/users?search=&page=1&limit=10
+POST  /api/users                      # { username, email, role? } -> one-time temporary password
+PATCH /api/users/:id                  # { username?, email?, role?, disabled? }
+POST  /api/users/:id/reset-password   # one-time temporary password, signs the user out
 ```
+
+Roles are `admin`, `agent` and `merchant`. The full list of admin endpoints (merchants, banks, mappings) is in the OpenAPI docs at `/api-docs`.
 
 ## Webhooks (Admin)
 

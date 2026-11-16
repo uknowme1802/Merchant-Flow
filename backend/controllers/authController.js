@@ -5,24 +5,71 @@
   const bcrypt = require("bcryptjs")
   const {authenticator} = require("otplib");
   const User = require("../models/User");
+  const Merchant = require("../models/Merchant");
   const jwt = require("jsonwebtoken");
+  const { normaliseRole } = require("../constants/roles");
+  const sessionRevocation = require("../utils/sessionRevocation");
 
 
   const SECRET = process.env.SECRET;
   const REFRESH_SECRET = process.env.REFRESH_SECRET;
 
+  const needsMfaSetup = (user) => Boolean(user.mfaRequired) && !user.twoFactor?.enabled;
+
   const signAccessToken = (user) =>
-    jwt.sign({id: user._id, email:user.email, role:user.role,
+    jwt.sign({id: user._id, email:user.email, role: normaliseRole(user.role),
+      // Normally "now"; see utils/sessionRevocation.js for the one case where it is a second later.
+      iat: sessionRevocation.issuedAtFor(user._id),
       // An admin-issued temporary password must be replaced before anything else works.
-      ...(user.mustChangePassword ? {mustChange: true} : {})}, SECRET, {
+      ...(user.mustChangePassword ? {mustChange: true} : {}),
+      // An admin requires two-factor and it is not set up yet: only the setup calls work.
+      ...(needsMfaSetup(user) ? {mfaSetup: true} : {})}, SECRET, {
       expiresIn: "15m"
     })
 
   const signRefreshToken = (user) =>
     jwt.sign({id:user._id}, REFRESH_SECRET, { expiresIn:"7d" })
 
+  // The email lets the login rate limiter recognise an exempt account at the 2FA step too.
   const signPendingToken = (user) =>
-    jwt.sign({id: user._id, type: "2fa_pending"}, SECRET, { expiresIn: "5m"})
+    jwt.sign({id: user._id, type: "2fa_pending", email: user.email}, SECRET, { expiresIn: "5m"})
+
+  const escapeRegex = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+  // Finds a login by email or username. The match is not case sensitive: rows saved before the
+  // application lower-cased these fields (for example "Harsh@admin.com") must still be found.
+  const findLogin = async (identifier) => {
+    const fields = "+password +refreshToken";
+    const exact = await User.findOne({$or: [{email: identifier}, {username: identifier}]}).select(fields);
+    if (exact) return exact;
+
+    const anyCase = new RegExp(`^${escapeRegex(identifier)}$`, "i");
+    return User.findOne({$or: [{email: anyCase}, {username: anyCase}]}).select(fields);
+  };
+
+  // A login that belongs to a suspended or deleted merchant cannot start or continue a session.
+  const merchantBlock = async (user) => {
+    if (normaliseRole(user.role) !== "merchant" || !user.merchantId) return null;
+    const merchant = await Merchant.findById(user.merchantId);
+    if (merchant && !["suspended", "deleted"].includes(merchant.status)) return null;
+    return {
+      success: false,
+      code: "MERCHANT_SUSPENDED",
+      message: merchant?.status === "suspended"
+        ? "This merchant account is suspended. Contact support."
+        : "This merchant account is closed."
+    };
+  };
+
+  const DISABLED_RESPONSE = {
+    success: false,
+    code: "ACCOUNT_DISABLED",
+    message: "This account is disabled. Contact an administrator."
+  };
+
+  const sessionUser = (user) => ({
+    id: user._id, email: user.email, role: normaliseRole(user.role), username: user.username ?? null
+  });
 
   const issueSessionTokens = async (user) => {
     const accessToken = signAccessToken(user);
@@ -50,9 +97,7 @@
 
       // The "email" field also accepts a username (merchant logins created by an admin have one).
       const identifier = email.trim().toLowerCase();
-      const user = await User.findOne({$or: [{email: identifier}, {username: identifier}]}).select(
-        "+password +refreshToken"
-      );
+      const user = await findLogin(identifier);
 
       if(!user){
         return res.status(401).json({
@@ -69,8 +114,14 @@
         });
       }
 
-      // const accessToken = signAccessToken(user);
-      // const refreshToken = signRefreshToken(user);
+      // Checked after the password, so only the account's owner learns that it is disabled.
+      if (user.disabled) {
+        return res.status(403).json(DISABLED_RESPONSE);
+      }
+      const blocked = await merchantBlock(user);
+      if (blocked) {
+        return res.status(403).json(blocked);
+      }
 
       if (user.twoFactor?.enabled){
         const pendingToken = signPendingToken(user);
@@ -90,8 +141,9 @@
         success: true,
         accessToken,
         refreshToken,
-        user: {id: user._id, email:user.email, role: user.role, username: user.username ?? null},
-        mustChangePassword: Boolean(user.mustChangePassword)
+        user: sessionUser(user),
+        mustChangePassword: Boolean(user.mustChangePassword),
+        mfaSetupRequired: needsMfaSetup(user)
       });
     } catch (err){
       next(err)
@@ -116,7 +168,7 @@
       user.mustChangePassword = false;
 
       const {accessToken, refreshToken} = await issueSessionTokens(user);
-      return res.json({ success: true, accessToken, refreshToken });
+      return res.json({ success: true, accessToken, refreshToken, mfaSetupRequired: needsMfaSetup(user) });
     } catch (err) {
       next(err);
     }
@@ -164,15 +216,21 @@
           message: "Invalid authentication code!"
         })
       }
+      if (user.disabled) {
+        return res.status(403).json(DISABLED_RESPONSE);
+      }
+      const blocked = await merchantBlock(user);
+      if (blocked) {
+        return res.status(403).json(blocked);
+      }
       const {accessToken, refreshToken} = await issueSessionTokens(user);
 
       return res.json({
         success: true,
         accessToken,
         refreshToken,
-        user: {
-          id: user._id, email: user.email, role: user.role
-        }
+        user: sessionUser(user),
+        mustChangePassword: Boolean(user.mustChangePassword)
       })
     } catch(err){
       next(err);
@@ -210,6 +268,13 @@
           success: false,
           message: "Refresh Token has been revoked"
         })
+      }
+      if (user.disabled) {
+        return res.status(403).json(DISABLED_RESPONSE);
+      }
+      const blocked = await merchantBlock(user);
+      if (blocked) {
+        return res.status(403).json(blocked);
       }
 
       const newAccessToken = signAccessToken(user);

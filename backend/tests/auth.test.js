@@ -72,7 +72,7 @@ describe("Authorization API", () => {
         const mockUser = {
             _id: "user-id-123",
             email: "user@test.com",
-            role: "user",
+            role: "agent",
             password: passwordHash,
             refreshToken: null,
 
@@ -100,7 +100,7 @@ describe("Authorization API", () => {
 
         expect(response.body.user.email).toBe("user@test.com");
 
-       expect(response.body.user.role).toBe("user");
+       expect(response.body.user.role).toBe("agent");
 
        expect(mockUser.save).toHaveBeenCalledTimes(1);
 
@@ -115,7 +115,7 @@ describe("Authorization API", () => {
         const mockUser = {
             _id: "user-id-123",
             email: "user@test.com",
-            role: "user",
+            role: "agent",
             password: "some-password",
             refreshToken: null,
 

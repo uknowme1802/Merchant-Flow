@@ -13,7 +13,7 @@ describe("Checkout flow (QR generation + 12-digits UTR verification",()=> {
         jest.clearAllMocks();
     })
 
-    const buildAccessToken = (id, role = "user") => 
+    const buildAccessToken = (id, role = "agent") => 
         jwt.sign({id, email: "buyer@test.com", role }, process.env.SECRET, {expiresIn:"15m"});
 
         test("POST /api/checkout creates a Pending order and returns a real QR data URL", async () => {
@@ -122,7 +122,7 @@ describe("Checkout-already-used UTR gets a distinct message", ()=>{
         jest.clearAllMocks();
     });
 
-    const buildAccessToken= (id, role ="user") =>
+    const buildAccessToken= (id, role ="agent") =>
         jwt.sign({ id, email:"buyer@test.com", role}, process.env.SECRET, {
             expiresIn: "15m"
         });
@@ -197,7 +197,7 @@ describe("Checkout - Webhook triggers", () => {
         jest.clearAllMocks();
     });
 
-    const buildAccessToken =(id, role = "user") =>
+    const buildAccessToken =(id, role = "agent") =>
         jwt.sign({ id, email: "buyer@test.com", role }, process.env.SECRET, { expiresIn: "15m" });
 
     test("createCheckout fires a checkout.created webhook event", async () => {
