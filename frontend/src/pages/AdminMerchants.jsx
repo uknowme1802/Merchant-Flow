@@ -1,177 +1,259 @@
 import { useEffect, useState } from "react"
+import { useNavigate } from "react-router-dom"
 import toast from "react-hot-toast"
+import {
+  ArrowRightLeft, CircleCheck, CircleX, KeyRound, Layers, OctagonX, Plus, RotateCw, Search, SquarePen, Trash2, UserPlus
+} from "lucide-react"
 import API from "../services/api"
 import Card from "../components/ui/Card"
-import Button from "../components/ui/Button"
+import ConfirmDialog from "../components/ui/ConfirmDialog"
+import Pagination from "../components/ui/Pagination"
+import RowMenu from "../components/ui/RowMenu"
+import Switch from "../components/ui/Switch"
+import SecretModal from "../components/SecretModal"
 import StatusBadge from "../components/merchant/StatusBadge"
+import AuditLogTable from "../components/admin/AuditLogTable"
+import {
+  BulkMappingModal, CreateMerchantModal, DecisionModal, DeleteMerchantModal, EditConfigModal, ForceDeleteModal,
+  KeysModal, ReviewModal, SwitchModeModal, TeamModal
+} from "../components/admin/MerchantDialogs"
+import { buttonClass, errorMessage, formatIST, inputClass } from "../utils/format"
 
-const STATUSES = ["", "pending", "active", "suspended", "rejected"]
-const NEEDS_REASON = ["reject", "suspend"]
+const STATUSES = [
+  ["", "All Status"], ["pending", "Pending"], ["active", "Active"], ["suspended", "Suspended"],
+  ["rejected", "Rejected"], ["deleted", "Deleted"]
+]
 
-// Which decisions make sense for each status (the server enforces the same rules).
-const ACTIONS = {
-  pending: ["approve", "reject"],
-  active: ["suspend"],
-  suspended: ["reactivate"],
-  rejected: []
-}
+const pill = "px-3 py-1 rounded-full ring-1 ring-inset text-xs font-semibold tracking-wide transition"
 
 export default function AdminMerchants() {
-  const [status, setStatus] = useState("pending")
-  const [search, setSearch] = useState("")
-  const [rows, setRows] = useState([])
-  const [open, setOpen] = useState(null) // { merchant, credentials }
-  const [reason, setReason] = useState("")
+  const navigate = useNavigate()
+
   const [tab, setTab] = useState("merchants")
-  const [logs, setLogs] = useState([])
-
+  const [status, setStatus] = useState("")
+  const [searchText, setSearchText] = useState("")
+  const [search, setSearch] = useState("")
+  const [page, setPage] = useState(1)
+  const [limit, setLimit] = useState(20)
+  const [result, setResult] = useState({ data: [], total: 0 })
   const [reloadKey, setReloadKey] = useState(0)
-  const load = () => setReloadKey((n) => n + 1)
+
+  // One dialog at a time: { type, merchant }. The one-time value (password or key) is separate,
+  // so it outlives the dialog that produced it and is dropped when the admin confirms.
+  const [dialog, setDialog] = useState(null)
+  const [secret, setSecret] = useState(null)
+  const [busy, setBusy] = useState(false)
+
+  const reload = () => setReloadKey((n) => n + 1)
+  const close = () => setDialog(null)
+  const done = () => { close(); reload() }
+  const showSecret = (value) => { close(); reload(); setSecret(value) }
+  const open = (type, merchant) => () => setDialog({ type, merchant })
+
+  // The search runs on the server, a moment after typing stops.
+  useEffect(() => {
+    const timer = setTimeout(() => { setSearch(searchText.trim()); setPage(1) }, 350)
+    return () => clearTimeout(timer)
+  }, [searchText])
 
   useEffect(() => {
-    API.get("/admin/merchants", { params: { status: status || undefined, search: search || undefined } })
-      .then((res) => setRows(res.data.data))
+    if (tab !== "merchants") return
+    let ignore = false
+    API.get("/admin/merchants", { params: { status: status || undefined, search: search || undefined, page, limit } })
+      .then((res) => { if (!ignore) setResult({ data: res.data.data, total: res.data.total }) })
       .catch(() => {})
-  }, [status, search, reloadKey])
+    return () => { ignore = true }
+  }, [tab, status, search, page, limit, reloadKey])
 
-  useEffect(() => {
-    if (tab !== "audit") return
-    API.get("/admin/audit-logs?limit=50").then((res) => setLogs(res.data.data)).catch(() => {})
-  }, [tab])
-
-  const view = async (id) => {
-    const res = await API.get(`/admin/merchants/${id}`)
-    setOpen(res.data)
-    setReason("")
+  const applyMfa = async () => {
+    setBusy(true)
+    try {
+      await API.post(`/admin/merchants/${dialog.merchant.id}/${dialog.on ? "require-mfa" : "disable-mfa"}`)
+      toast.success(dialog.on ? "2FA is now required" : "2FA turned off")
+      done()
+    } catch (e) {
+      toast.error(errorMessage(e, "Could not change 2FA"))
+    } finally {
+      setBusy(false)
+    }
   }
 
-  const decide = async (action) => {
-    if (NEEDS_REASON.includes(action) && !reason.trim()) return toast.error("A reason is required")
-    try {
-      await API.post(`/admin/merchants/${open.merchant.id}/${action}`, { reason: reason || undefined })
-      toast.success(`Merchant ${action}d`)
-      setOpen(null)
-      load()
-    } catch (e) { toast.error(e.response?.data?.message || "Action failed") }
-  }
+  const menuFor = (m) => {
+    const deleted = m.status === "deleted"
+    const gone = { disabled: deleted, hint: "This merchant is deleted" }
 
-  const revokeKey = async (credentialId) => {
-    if (!window.confirm("Emergency-revoke this key?")) return
-    try {
-      await API.delete(`/admin/merchants/${open.merchant.id}/credentials/${credentialId}`)
-      view(open.merchant.id)
-    } catch (e) { toast.error(e.response?.data?.message || "Could not revoke") }
+    // The decision that fits the merchant's status.
+    const decisions = {
+      pending: [
+        { label: "Approve", icon: CircleCheck, onClick: () => setDialog({ type: "decision", merchant: m, action: "approve" }) },
+        { label: "Reject", icon: CircleX, tone: "warning", onClick: () => setDialog({ type: "decision", merchant: m, action: "reject" }) }
+      ],
+      active: [{ label: "Suspend", icon: CircleX, tone: "warning", onClick: () => setDialog({ type: "decision", merchant: m, action: "suspend" }) }],
+      suspended: [{ label: "Reactivate", icon: CircleCheck, onClick: () => setDialog({ type: "decision", merchant: m, action: "reactivate" }) }]
+    }
+
+    return [
+      { label: "Edit Merchant", icon: SquarePen, onClick: open("config", m), ...gone },
+      { label: "API Keys", icon: KeyRound, onClick: open("keys", m), ...gone },
+      { label: "Team and reset password", icon: UserPlus, onClick: open("team", m), ...gone },
+      {
+        label: m.mode === "sandbox" ? "Switch to production" : "Move back to sandbox",
+        icon: ArrowRightLeft,
+        disabled: m.status !== "active",
+        hint: "Only an approved (active) merchant can change mode",
+        onClick: open("mode", m)
+      },
+      ...(decisions[m.status] || []),
+      { label: "Delete", icon: Trash2, tone: "danger", onClick: open("delete", m), disabled: deleted, hint: "Already deleted" },
+      { label: "Force Delete", icon: OctagonX, tone: "danger", onClick: open("forceDelete", m) }
+    ]
   }
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-4">
-        <h2 className="text-2xl font-bold">Merchants</h2>
-        {["merchants", "audit"].map((t) => (
-          <button key={t} onClick={() => setTab(t)}
-            className={`px-3 py-1 rounded ${tab === t ? "bg-indigo-100 text-indigo-600" : "text-gray-600"}`}>
-            {t === "merchants" ? "Review queue" : "Audit log"}
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h2 className="text-2xl font-bold tracking-tight">Merchant Management</h2>
+          <p className="text-sm text-gray-500">Overview of all registered merchants on the platform</p>
+        </div>
+        <button type="button" onClick={() => setDialog({ type: "create" })}
+          className={`flex items-center gap-2 rounded-full ${buttonClass.primary}`}>
+          <Plus size={16} /> Add Merchant
+        </button>
+      </div>
+
+      <div className="inline-flex flex-wrap items-center gap-1 p-1 rounded-full bg-gray-200/60">
+        {[["merchants", "Merchant List"], ["audit", "Audit log"]].map(([key, label]) => (
+          <button key={key} type="button" onClick={() => setTab(key)}
+            className={`px-4 py-1.5 rounded-full text-sm ${tab === key ? "bg-white text-indigo-700 font-semibold shadow-sm ring-1 ring-gray-900/5" : "text-gray-600 hover:text-gray-900"}`}>
+            {label}
           </button>
         ))}
       </div>
 
-      {tab === "audit" && (
-        <Card>
-          <ul className="text-sm space-y-1">
-            {logs.map((l) => (
-              <li key={l._id || l.id} className="flex justify-between gap-4">
-                <span>{l.action} <span className="text-gray-500">({l.actorType}{l.actorEmail ? `: ${l.actorEmail}` : ""})</span></span>
-                <span className="text-gray-500">{new Date(l.createdAt).toLocaleString()}</span>
-              </li>
-            ))}
-          </ul>
-        </Card>
-      )}
+      {tab === "audit" && <AuditLogTable />}
 
       {tab === "merchants" && (
         <>
-          <div className="flex gap-3">
-            <select className="p-2 border rounded" value={status} onChange={(e) => setStatus(e.target.value)}>
-              {STATUSES.map((s) => <option key={s} value={s}>{s || "all statuses"}</option>)}
-            </select>
-            <input className="p-2 border rounded flex-1" placeholder="Search name, email or MID"
-              value={search} onChange={(e) => setSearch(e.target.value)} />
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="relative w-80 max-w-full">
+              <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+              <input className={`${inputClass} pl-9`} placeholder="Search merchant ID, business, email or username"
+                aria-label="Search merchants" value={searchText} onChange={(e) => setSearchText(e.target.value)} />
+            </div>
+
+            <div className="flex flex-wrap items-center gap-3 ml-auto">
+              <button type="button" onClick={() => setDialog({ type: "bulk" })}
+                className={`flex items-center gap-2 ${buttonClass.outline}`}>
+                <Layers size={16} /> Bulk Payin Meta Mapping
+              </button>
+              <select className="px-3 py-2 rounded-xl bg-white text-sm ring-1 ring-gray-200 shadow-sm focus:outline-none focus:ring-2 focus:ring-indigo-300" aria-label="Status" value={status}
+                onChange={(e) => { setStatus(e.target.value); setPage(1) }}>
+                {STATUSES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+              </select>
+              <button type="button" aria-label="Refresh" title="Refresh" onClick={reload}
+                className="p-2.5 rounded-xl bg-white text-gray-600 ring-1 ring-gray-200 shadow-sm hover:bg-gray-50">
+                <RotateCw size={16} />
+              </button>
+            </div>
           </div>
 
           <Card>
-            <table className="w-full text-sm">
-              <thead><tr className="text-left text-gray-500 border-b"><th className="py-2">Business</th><th>MID</th><th>Email</th><th>Status</th><th>Applied</th><th></th></tr></thead>
-              <tbody>
-                {rows.length === 0 && <tr><td colSpan={6} className="py-4 text-gray-500">No merchants found.</td></tr>}
-                {rows.map((m) => (
-                  <tr key={m.id} className="border-b last:border-0">
-                    <td className="py-2">{m.businessName}</td>
-                    <td><code>{m.mid}</code></td>
-                    <td>{m.contactEmail}</td>
-                    <td><StatusBadge value={m.status} /></td>
-                    <td>{new Date(m.createdAt).toLocaleDateString()}</td>
-                    <td className="text-right"><button className="text-indigo-600 hover:underline" onClick={() => view(m.id)}>Review</button></td>
+            <div className="overflow-x-auto">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th className="pr-4">Merchant ID</th>
+                    <th className="pr-4">Business Name</th>
+                    <th className="pr-4">Email Address</th>
+                    <th className="pr-4">Status</th>
+                    <th className="pr-4">2FA</th>
+                    <th className="pr-4">Date</th>
+                    <th className="text-right">Action</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {result.data.length === 0 && (
+                    <tr><td colSpan={7} className="py-6 text-center text-gray-500">No merchants found.</td></tr>
+                  )}
+                  {result.data.map((m) => (
+                    <tr key={m.id}>
+                      <td className="py-3 pr-4 whitespace-nowrap">
+                        <button type="button" title="View details" onClick={open("review", m)}
+                          className="p-0 font-mono text-sm font-normal text-indigo-600 hover:underline">
+                          {m.mid}
+                        </button>
+                      </td>
+                      <td className="pr-4 font-medium">{m.businessName}</td>
+                      <td className="pr-4">{m.contactEmail}</td>
+                      <td className="pr-4 whitespace-nowrap">
+                        <span className="inline-flex items-center gap-2">
+                          <StatusBadge value={m.status} />
+                          <StatusBadge value={m.mode} />
+                        </span>
+                      </td>
+                      <td className="pr-4">
+                        <Switch checked={m.mfaEnabled || m.mfaRequired} label={`2FA: ${m.businessName}`}
+                          disabled={m.status === "deleted"}
+                          title={m.mfaEnabled ? "2FA is set up" : m.mfaRequired ? "Required; the owner sets it up at their next login" : "Not required"}
+                          onChange={(value) => setDialog({ type: "mfa", merchant: m, on: value })} />
+                      </td>
+                      <td className="pr-4 whitespace-nowrap">{formatIST(m.createdAt)}</td>
+                      <td className="text-right whitespace-nowrap">
+                        <span className="inline-flex items-center gap-2">
+                          <button type="button" onClick={() => navigate(`/admin/merchants/${m.id}/payin`)}
+                            className={`${pill} bg-indigo-50 ring-indigo-200 text-indigo-700 hover:bg-indigo-100`}>
+                            PAYIN
+                          </button>
+                          <button type="button" disabled title="Payout is not available yet"
+                            className={`${pill} bg-orange-50 ring-orange-200 text-orange-600 opacity-50 cursor-not-allowed`}>
+                            PAYOUT
+                          </button>
+                          <RowMenu label={`Actions for ${m.businessName}`} items={menuFor(m)} />
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <Pagination
+              page={page} setPage={setPage} totalPages={Math.ceil(result.total / limit)}
+              pageSize={limit} setPageSize={(n) => { setLimit(n); setPage(1) }} total={result.total} sizes={[10, 20, 50]}
+            />
           </Card>
         </>
       )}
 
-      {open && (
-        <div className="fixed inset-0 bg-black/40 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-xl p-6 w-full max-w-xl max-h-[90vh] overflow-y-auto">
-            <div className="flex justify-between items-start mb-3">
-              <div>
-                <h3 className="text-xl font-bold">{open.merchant.businessName}</h3>
-                <code className="text-sm">{open.merchant.mid}</code>
-              </div>
-              <StatusBadge value={open.merchant.status} />
-            </div>
-
-            <dl className="text-sm grid grid-cols-3 gap-y-1 mb-4">
-              <dt className="text-gray-500">Type</dt><dd className="col-span-2">{open.merchant.businessType}</dd>
-              <dt className="text-gray-500">Website</dt><dd className="col-span-2">{open.merchant.website || "-"}</dd>
-              <dt className="text-gray-500">Country</dt><dd className="col-span-2">{open.merchant.country}</dd>
-              <dt className="text-gray-500">Contact</dt><dd className="col-span-2">{open.merchant.contactName}, {open.merchant.contactPhone}, {open.merchant.contactEmail}</dd>
-              <dt className="text-gray-500">Registration no.</dt><dd className="col-span-2">{open.merchant.kyc.registrationNumber}</dd>
-              <dt className="text-gray-500">Tax ID</dt><dd className="col-span-2">{open.merchant.kyc.taxId || "-"}</dd>
-              <dt className="text-gray-500">Address</dt><dd className="col-span-2">{open.merchant.kyc.address}</dd>
-              {open.merchant.statusReason && (<><dt className="text-gray-500">Last reason</dt><dd className="col-span-2">{open.merchant.statusReason}</dd></>)}
-            </dl>
-
-            <h4 className="font-semibold mb-1">Keys</h4>
-            <ul className="text-sm mb-4">
-              {open.credentials.length === 0 && <li className="text-gray-500">None issued.</li>}
-              {open.credentials.map((c) => (
-                <li key={c.id} className="flex justify-between items-center py-1">
-                  <span>{c.environment} <code>{c.keyHint}</code> <StatusBadge value={c.status} /></span>
-                  {["active", "retiring"].includes(c.status) && (
-                    <button className="text-red-600 hover:underline" onClick={() => revokeKey(c.id)}>Revoke</button>
-                  )}
-                </li>
-              ))}
-            </ul>
-
-            {ACTIONS[open.merchant.status].length > 0 && (
-              <>
-                <textarea className="w-full p-2 border rounded mb-3" rows={2}
-                  placeholder="Reason (required to reject or suspend)" value={reason} onChange={(e) => setReason(e.target.value)} />
-                <div className="flex gap-2">
-                  {ACTIONS[open.merchant.status].map((a) => (
-                    <Button key={a} onClick={() => decide(a)}
-                      className={`${a === "approve" || a === "reactivate" ? "bg-green-600" : "bg-red-600"} text-white px-4 py-2 rounded-lg capitalize`}>
-                      {a}
-                    </Button>
-                  ))}
-                </div>
-              </>
-            )}
-            <button className="mt-4 text-sm text-gray-500 hover:underline" onClick={() => setOpen(null)}>Close</button>
-          </div>
-        </div>
+      {dialog?.type === "create" && (
+        <CreateMerchantModal onClose={close} onCreated={(data) => showSecret({
+          title: "Merchant created",
+          label: "Temporary password",
+          value: data.temporaryPassword,
+          details: [["Merchant", data.merchant.businessName], ["MID", data.merchant.mid], ["Username", data.username], ["Mode", data.merchant.mode]],
+          note: "The owner must change it at first login."
+        })} />
       )}
+      {dialog?.type === "review" && <ReviewModal merchantId={dialog.merchant.id} onClose={close} onChanged={done} />}
+      {dialog?.type === "decision" && <DecisionModal merchant={dialog.merchant} action={dialog.action} onClose={close} onDone={done} />}
+      {dialog?.type === "config" && <EditConfigModal merchant={dialog.merchant} onClose={close} onSaved={done} />}
+      {dialog?.type === "keys" && <KeysModal merchant={dialog.merchant} onClose={close} onSecret={showSecret} />}
+      {dialog?.type === "team" && <TeamModal merchant={dialog.merchant} onClose={close} onSecret={showSecret} />}
+      {dialog?.type === "mode" && <SwitchModeModal merchant={dialog.merchant} onClose={close} onSecret={showSecret} />}
+      {dialog?.type === "delete" && <DeleteMerchantModal merchant={dialog.merchant} onClose={close} onDone={done} />}
+      {dialog?.type === "forceDelete" && <ForceDeleteModal merchant={dialog.merchant} onClose={close} onDone={done} />}
+      {dialog?.type === "bulk" && <BulkMappingModal onClose={close} onDone={close} />}
+      {dialog?.type === "mfa" && (
+        <ConfirmDialog title={dialog.on ? "Require 2FA" : "Turn off 2FA"} tone={dialog.on ? "primary" : "danger"}
+          onConfirm={applyMfa} onCancel={close} busy={busy}>
+          {dialog.on
+            ? <>Require 2FA for the owner of <b>{dialog.merchant.businessName}</b>? They are signed out now and must set up an authenticator app at their next login.</>
+            : <>Turn off 2FA for the owner of <b>{dialog.merchant.businessName}</b>? Their authenticator code is cleared and they log in with the password alone. Turn it on again to make them set up a new code.</>}
+        </ConfirmDialog>
+      )}
+
+      <SecretModal secret={secret} onDone={() => setSecret(null)} />
     </div>
   )
 }

@@ -5,8 +5,8 @@
 
 /* Global styles */
 body {
-  background: #F9FAFB;
-  font-family: Inter, sans-serif;
+  background: #F5F5FA;
+  @apply font-sans text-gray-900 antialiased;
   margin: 0;
   min-height: 100vh;
 }
@@ -27,7 +27,7 @@ body {
 
 /* Optional: custom button styles if you want to override Tailwind buttons */
 button {
-  @apply rounded-lg px-4 py-2 font-medium cursor-pointer transition;
+  @apply rounded-xl px-4 py-2 font-medium cursor-pointer transition;
 }
 
 /* Links */
@@ -36,4 +36,24 @@ a {
 }
 a:hover {
   @apply text-secondary;
+}
+
+/* Data tables on the admin pages: quiet upper-case headings, hairline dividers and a soft
+   indigo tint under the pointer. */
+@layer components {
+  .data-table {
+    @apply w-full text-sm;
+  }
+  .data-table thead th {
+    @apply pb-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500 border-b border-gray-200;
+  }
+  .data-table tbody tr {
+    @apply border-b border-gray-100 transition-colors;
+  }
+  .data-table tbody tr:last-child {
+    @apply border-b-0;
+  }
+  .data-table tbody tr:hover {
+    @apply bg-indigo-50/40;
+  }
 }

@@ -6,7 +6,7 @@ import Button from "../components/ui/Button"
 
 const empty = {
   businessName: "", businessType: "company", website: "", country: "IN",
-  contactName: "", contactPhone: "", email: "", password: "",
+  contactName: "", contactPhone: "", username: "", email: "", password: "",
   registrationNumber: "", taxId: "", address: ""
 }
 
@@ -24,7 +24,7 @@ export default function MerchantSignup() {
       const body = {
         businessName: form.businessName, businessType: form.businessType, country: form.country,
         contactName: form.contactName, contactPhone: form.contactPhone,
-        email: form.email, password: form.password,
+        username: form.username.trim().toLowerCase(), email: form.email, password: form.password,
         kyc: { registrationNumber: form.registrationNumber, address: form.address }
       }
       if (form.website) body.website = form.website
@@ -72,9 +72,13 @@ export default function MerchantSignup() {
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-6">
           <input className={field} placeholder="Contact name" value={form.contactName} onChange={set("contactName")} />
           <input className={field} placeholder="Phone" value={form.contactPhone} onChange={set("contactPhone")} />
+          <input className={field} placeholder="Username (to log in)" autoComplete="username" value={form.username} onChange={set("username")} />
           <input className={field} type="email" placeholder="Email" value={form.email} onChange={set("email")} />
-          <input className={field} type="password" placeholder="Password (min 8 characters)" value={form.password} onChange={set("password")} />
+          <input className={`${field} sm:col-span-2`} type="password" placeholder="Password (min 8 characters)" value={form.password} onChange={set("password")} />
         </div>
+        <p className="text-xs text-gray-500 -mt-4 mb-6">
+          Username: 3 to 30 lower case letters, digits or underscore. You can log in with it or with your email.
+        </p>
 
         <Button onClick={submit} disabled={busy} className="w-full bg-indigo-600 text-white p-2 rounded">
           {busy ? "Submitting..." : "Submit application"}
