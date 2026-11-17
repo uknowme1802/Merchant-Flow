@@ -18,6 +18,7 @@ import AdminMerchantPayin from "./pages/AdminMerchantPayin";
 import AdminBanks from "./pages/AdminBanks";
 import ChangePassword from "./pages/ChangePassword";
 import MfaSetup from "./pages/MfaSetup";
+import PayPage from "./pages/PayPage";
 
 
 
@@ -54,6 +55,8 @@ function App(){
         <Route path="/signup" element={<MerchantSignup />} />
         <Route path="/change-password" element={<ChangePassword />} />
         <Route path="/mfa-setup" element={<MfaSetup />} />
+        {/* The customer checkout: public, no login, no dashboard layout */}
+        <Route path="/pay/:orderId" element={<PayPage />} />
 
         <Route element={
           <ProtectedRoute>
