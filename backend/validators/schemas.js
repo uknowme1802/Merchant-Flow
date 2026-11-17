@@ -4,6 +4,7 @@ const { hasAtMostTwoDecimals } = require("../utils/money");
 const { BUSINESS_TYPES, ENVIRONMENTS, MERCHANT_STATUS, MERCHANT_MODES } = require("../constants/merchant");
 const { IFSC_REGEX, ACCOUNT_NUMBER_REGEX, UPI_ID_REGEX, BANK_STATUS, BANK_METHODS } = require("../constants/bank");
 const { STAFF_ROLES } = require("../constants/roles");
+const { UTR_REGEX, MERCHANT_ORDER_ID_REGEX, MAX_ORDER_PAISE } = require("../constants/order");
 
 const paise = Joi.number().integer().min(0).max(100000000000);
 const objectId = Joi.string().pattern(/^[a-fA-F0-9]{24}$/);
@@ -232,6 +233,39 @@ module.exports = {
     bulkBankMapping: Joi.object({
         merchantIds: Joi.array().items(objectId).min(1).max(50).unique().required(),
         bankIds: Joi.array().items(objectId).min(1).max(50).unique().required()
+    }),
+
+    // POST /v1/orders. Amounts are whole paise: 50000 is Rs 500.00.
+    createOrder: Joi.object({
+        amountPaise: Joi.number().integer().strict().min(1).max(MAX_ORDER_PAISE).required()
+            .messages({ "number.base": "amountPaise must be a whole number of paise", "number.integer": "amountPaise must be a whole number of paise" }),
+        merchantOrderId: Joi.string().pattern(MERCHANT_ORDER_ID_REGEX).optional()
+            .messages({ "string.pattern.base": "merchantOrderId must be 1 to 64 characters: letters, digits and _ - . :" }),
+        description: Joi.string().trim().max(200).allow("").default(""),
+        customerName: Joi.string().trim().max(120).allow("").default("")
+    }),
+
+    // The customer's bank reference number, entered on the checkout page.
+    claimPayment: Joi.object({
+        utr: Joi.string().trim().pattern(UTR_REGEX).required()
+            .messages({ "string.pattern.base": "The UTR is the 12-digit reference number from your payment app" })
+    }),
+
+    // The admin's bank statement entry.
+    createBankCredit: Joi.object({
+        bankId: objectId.required(),
+        amountPaise: Joi.number().integer().strict().min(1).max(MAX_ORDER_PAISE).required(),
+        utr: Joi.string().trim().pattern(UTR_REGEX).required()
+            .messages({ "string.pattern.base": "utr must be the 12-digit bank reference number" }),
+        receivedAt: Joi.date().max("now").optional(),
+        note: Joi.string().trim().max(200).allow("").default("")
+    }),
+
+    bankCreditListQuery: Joi.object({
+        bankId: objectId.optional(),
+        claimed: Joi.boolean().optional(),
+        page: Joi.number().integer().min(1).default(1),
+        limit: Joi.number().integer().min(1).max(100).default(20)
     }),
 
     auditQuery: Joi.object({
