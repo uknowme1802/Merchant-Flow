@@ -172,12 +172,13 @@ const cancelPendingCallbacks = async (merchantId, mode) => {
     return res.modifiedCount;
 };
 
-const listCallbacks = async ({ page = 1, limit = 20, merchantId, mode, status, orderId }) => {
+const listCallbacks = async ({ page = 1, limit = 20, merchantId, mode, status, orderId, from, to }) => {
     const filter = {};
     if (merchantId) filter.merchantId = merchantId;
     if (mode) filter.mode = mode;
     if (status) filter.status = status;
     if (orderId) filter.orderPublicId = orderId;
+    if (from || to) filter.createdAt = { ...(from && { $gte: new Date(from) }), ...(to && { $lte: new Date(to) }) };
 
     const [data, total] = await Promise.all([
         CallbackDelivery.find(filter).select("-body").sort({ createdAt: -1 })
@@ -185,6 +186,13 @@ const listCallbacks = async ({ page = 1, limit = 20, merchantId, mode, status, o
         CallbackDelivery.countDocuments(filter)
     ]);
     return { data, total, page, limit };
+};
+
+// One delivery with its sent body, for the Data Sent view.
+const getCallback = async (id) => {
+    const delivery = await CallbackDelivery.findById(id);
+    if (!delivery) throw new ApiError(404, "Callback not found");
+    return delivery;
 };
 
 // Background loop: sends due callbacks, after running `beforeTick` (the order expiry sweep).
@@ -209,5 +217,5 @@ const startCallbackWorker = (beforeTick) => {
 
 module.exports = {
     enqueueOrderCallback, processDueCallbacks, resendCallback, cancelPendingCallbacks,
-    listCallbacks, startCallbackWorker, sign
+    listCallbacks, getCallback, startCallbackWorker, sign
 };

@@ -51,8 +51,9 @@ describe("openapi.yaml", () => {
     });
 
     test("documents the Phase 2b callback endpoints and the callback body", () => {
-        expect(Object.keys(spec.paths["/api/admin/callbacks"])).toEqual(["get"]);
-        expect(Object.keys(spec.paths["/api/admin/callbacks/{id}/resend"])).toEqual(["post"]);
+        expect(Object.keys(spec.paths["/api/webhook-events"])).toEqual(["get"]);
+        expect(Object.keys(spec.paths["/api/webhook-events/{id}/resend"])).toEqual(["post"]);
+        expect(Object.keys(spec.paths["/api/webhook-events/{id}/body"])).toEqual(["get"]);
         expect(Object.keys(spec.paths["/api/merchant/callbacks"])).toEqual(["get"]);
         expect(Object.keys(spec.paths["/api/merchant/callbacks/{id}/resend"])).toEqual(["post"]);
         expect(spec.components.schemas.CallbackPayload.properties.event.enum).toEqual(["order.success", "order.failed"]);

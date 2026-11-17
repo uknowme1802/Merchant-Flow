@@ -26,13 +26,28 @@ const toView = (d) => ({
     createdAt: d.createdAt
 });
 
-// GET /api/admin/callbacks
-exports.adminList = wrap(async (req, res) => {
+// GET /api/webhook-events   (admins and agents)
+exports.staffList = wrap(async (req, res) => {
     const { data, total, page, limit } = await callbackService.listCallbacks(req.validatedQuery);
     res.json({ success: true, total, page, limit, data: data.map(toView) });
 });
 
-// POST /api/admin/callbacks/:id/resend
+// GET /api/webhook-events/:id/body   (the exact message we sent, for the Data Sent view)
+exports.staffBody = wrap(async (req, res) => {
+    const delivery = await callbackService.getCallback(req.params.id);
+    res.json({
+        success: true,
+        id: delivery._id,
+        orderId: delivery.orderPublicId,
+        event: delivery.event,
+        url: delivery.url,
+        // The signature is not stored and not shown: it is made at send time from the secret key.
+        headers: { "Content-Type": "application/json", "X-Callback-Event": delivery.event },
+        body: JSON.parse(delivery.body)
+    });
+});
+
+// POST /api/webhook-events/:id/resend   (admin only)
 exports.adminResend = wrap(async (req, res) => {
     const delivery = await callbackService.resendCallback(req.params.id);
     await recordAudit(req, {

@@ -275,6 +275,8 @@ module.exports = {
         mode: Joi.string().valid(...MERCHANT_MODES).optional(),
         status: Joi.string().valid(...CALLBACK_STATUS).optional(),
         orderId: Joi.string().pattern(/^ord_[a-z0-9]{16}$/).optional(),
+        from: Joi.date().iso().optional(),
+        to: Joi.date().iso().when("from", { is: Joi.exist(), then: Joi.date().min(Joi.ref("from")) }).optional(),
         page: Joi.number().integer().min(1).default(1),
         limit: Joi.number().integer().min(1).max(100).default(20)
     }),

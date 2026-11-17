@@ -58,10 +58,10 @@ const setup = async () => {
 const asAdmin = (method, path) => request(app)[method](path).set("Authorization", `Bearer ${adminToken()}`);
 const as = (token, method, path) => request(app)[method](path).set("Authorization", `Bearer ${token}`);
 
-describe("admin: GET /api/admin/callbacks", () => {
+describe("admin: GET /api/webhook-events", () => {
     it("lists deliveries with the merchant, and never returns the signed body", async () => {
         const { merchant, delivery } = await setup();
-        const res = await asAdmin("get", "/api/admin/callbacks");
+        const res = await asAdmin("get", "/api/webhook-events");
 
         expect(res.statusCode).toBe(200);
         expect(res.body.total).toBe(1);
@@ -78,33 +78,67 @@ describe("admin: GET /api/admin/callbacks", () => {
         const other = await setup();
         await callbackService.processDueCallbacks();
 
-        expect((await asAdmin("get", "/api/admin/callbacks?status=delivered")).body.total).toBe(2);
-        expect((await asAdmin("get", "/api/admin/callbacks?status=failed")).body.total).toBe(0);
-        expect((await asAdmin("get", `/api/admin/callbacks?orderId=${order.orderId}`)).body.total).toBe(1);
-        expect((await asAdmin("get", `/api/admin/callbacks?merchantId=${other.merchant._id}`)).body.total).toBe(1);
+        expect((await asAdmin("get", "/api/webhook-events?status=delivered")).body.total).toBe(2);
+        expect((await asAdmin("get", "/api/webhook-events?status=failed")).body.total).toBe(0);
+        expect((await asAdmin("get", `/api/webhook-events?orderId=${order.orderId}`)).body.total).toBe(1);
+        expect((await asAdmin("get", `/api/webhook-events?merchantId=${other.merchant._id}`)).body.total).toBe(1);
         expect(merchant._id).toBeTruthy();
     });
 
     it("rejects a bad filter with 400", async () => {
-        expect((await asAdmin("get", "/api/admin/callbacks?status=nope")).statusCode).toBe(400);
+        expect((await asAdmin("get", "/api/webhook-events?status=nope")).statusCode).toBe(400);
     });
 
-    it("is closed to agents, merchants and anonymous callers", async () => {
+    it("filters by date range, and rejects an end date before the start", async () => {
+        await setup();
+        const day = 24 * 60 * 60 * 1000;
+        const iso = (offset) => encodeURIComponent(new Date(Date.now() + offset).toISOString());
+
+        expect((await asAdmin("get", `/api/webhook-events?from=${iso(-day)}&to=${iso(day)}`)).body.total).toBe(1);
+        expect((await asAdmin("get", `/api/webhook-events?from=${iso(day)}`)).body.total).toBe(0);
+        expect((await asAdmin("get", `/api/webhook-events?to=${iso(-day)}`)).body.total).toBe(0);
+        expect((await asAdmin("get", `/api/webhook-events?from=${iso(day)}&to=${iso(-day)}`)).statusCode).toBe(400);
+    });
+
+    it("is readable by agents, and closed to merchants and anonymous callers", async () => {
         const { merchant } = await setup();
-        expect((await as(userToken(), "get", "/api/admin/callbacks")).statusCode).toBe(403);
-        expect((await as(await memberToken(merchant), "get", "/api/admin/callbacks")).statusCode).toBe(403);
-        expect((await request(app).get("/api/admin/callbacks")).statusCode).toBe(401);
+        const agent = await as(userToken(), "get", "/api/webhook-events");
+        expect(agent.statusCode).toBe(200);
+        expect(agent.body.total).toBe(1);
+        expect((await as(await memberToken(merchant), "get", "/api/webhook-events")).statusCode).toBe(403);
+        expect((await request(app).get("/api/webhook-events")).statusCode).toBe(401);
     });
 });
 
-describe("admin: POST /api/admin/callbacks/:id/resend", () => {
+describe("GET /api/webhook-events/:id/body", () => {
+    it("returns the exact message we sent, for agents and admins, without any signature", async () => {
+        const { delivery, order } = await setup();
+        for (const res of [await asAdmin("get", `/api/webhook-events/${delivery._id}/body`),
+            await as(userToken(), "get", `/api/webhook-events/${delivery._id}/body`)]) {
+            expect(res.statusCode).toBe(200);
+            expect(res.body).toMatchObject({ orderId: order.orderId, event: "order.success" });
+            expect(res.body.body).toEqual(JSON.parse(delivery.body));
+            expect(res.body.body.data).toMatchObject({ orderId: order.orderId, status: "success", amountPaise: 50000 });
+            expect(JSON.stringify(res.body).toLowerCase()).not.toContain("signature");
+        }
+    });
+
+    it("returns 404 for an unknown id, 400 for a malformed one, and 403 for merchants", async () => {
+        const { delivery, merchant } = await setup();
+        expect((await asAdmin("get", `/api/webhook-events/${"f".repeat(24)}/body`)).statusCode).toBe(404);
+        expect((await asAdmin("get", "/api/webhook-events/not-an-id/body")).statusCode).toBe(400);
+        expect((await as(await memberToken(merchant), "get", `/api/webhook-events/${delivery._id}/body`)).statusCode).toBe(403);
+    });
+});
+
+describe("admin: POST /api/webhook-events/:id/resend", () => {
     it("resends, returns the new state and audits it", async () => {
         const { delivery, merchant } = await setup();
         respondWith = 500;
         await callbackService.processDueCallbacks();
 
         respondWith = 200;
-        const res = await asAdmin("post", `/api/admin/callbacks/${delivery._id}/resend`).send({});
+        const res = await asAdmin("post", `/api/webhook-events/${delivery._id}/resend`).send({});
         expect(res.statusCode).toBe(200);
         expect(res.body.callback).toMatchObject({ status: "delivered", attempts: 1, statusCode: 200 });
 
@@ -114,19 +148,19 @@ describe("admin: POST /api/admin/callbacks/:id/resend", () => {
     });
 
     it("returns 404 for an unknown id and 400 for a malformed one", async () => {
-        expect((await asAdmin("post", `/api/admin/callbacks/${"f".repeat(24)}/resend`).send({})).statusCode).toBe(404);
-        expect((await asAdmin("post", "/api/admin/callbacks/not-an-id/resend").send({})).statusCode).toBe(400);
+        expect((await asAdmin("post", `/api/webhook-events/${"f".repeat(24)}/resend`).send({})).statusCode).toBe(404);
+        expect((await asAdmin("post", "/api/webhook-events/not-an-id/resend").send({})).statusCode).toBe(400);
     });
 
     it("returns 409 for a cancelled callback", async () => {
         const { delivery, merchant } = await setup();
         await callbackService.cancelPendingCallbacks(merchant._id, "sandbox");
-        expect((await asAdmin("post", `/api/admin/callbacks/${delivery._id}/resend`).send({})).statusCode).toBe(409);
+        expect((await asAdmin("post", `/api/webhook-events/${delivery._id}/resend`).send({})).statusCode).toBe(409);
     });
 
     it("is closed to agents", async () => {
         const { delivery } = await setup();
-        expect((await as(userToken(), "post", `/api/admin/callbacks/${delivery._id}/resend`).send({})).statusCode).toBe(403);
+        expect((await as(userToken(), "post", `/api/webhook-events/${delivery._id}/resend`).send({})).statusCode).toBe(403);
     });
 });
 
