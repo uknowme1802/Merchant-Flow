@@ -30,6 +30,16 @@ const generateBankId = () => {
     return `bank_${id}`;
 };
 
+// Public order id, for example "ord_k3x9f2ab7mqp3x9f". It is the checkout page address, so it is
+// 16 characters (about 79 bits) and cannot be guessed by trying ids.
+const generateOrderId = () => {
+    let id = "";
+    for (let i = 0; i < 16; i++) {
+        id += MID_ALPHABET[crypto.randomInt(MID_ALPHABET.length)];
+    }
+    return `ord_${id}`;
+};
+
 // One-time temporary password for admin-created accounts and resets: 16 characters, no look-alike
 // letters, always containing an upper case letter, a lower case letter and a digit.
 const TEMP_UPPER = "ABCDEFGHJKMNPQRSTUVWXYZ";
@@ -53,4 +63,4 @@ const generateTempPassword = () => {
 
 const lastFour = (secret) => String(secret).slice(-4);
 
-module.exports = { generateMid, generateBankId, generateTempPassword, generateSecret, lastFour, MID_ALPHABET, MID_LENGTH };
+module.exports = { generateMid, generateBankId, generateOrderId, generateTempPassword, generateSecret, lastFour, MID_ALPHABET, MID_LENGTH };
