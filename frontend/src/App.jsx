@@ -16,6 +16,7 @@ import MerchantTeam from "./pages/MerchantTeam";
 import AdminMerchants from "./pages/AdminMerchants";
 import AdminMerchantPayin from "./pages/AdminMerchantPayin";
 import AdminBanks from "./pages/AdminBanks";
+import AdminBankCredits from "./pages/AdminBankCredits";
 import ChangePassword from "./pages/ChangePassword";
 import MfaSetup from "./pages/MfaSetup";
 import PayPage from "./pages/PayPage";
@@ -74,6 +75,7 @@ function App(){
           <Route path="/admin/merchants" element={<RoleRoute roles={["admin"]}><AdminMerchants /></RoleRoute>} />
           <Route path="/admin/merchants/:id/payin" element={<RoleRoute roles={["admin"]}><AdminMerchantPayin /></RoleRoute>} />
           <Route path="/admin/banks" element={<RoleRoute roles={["admin"]}><AdminBanks /></RoleRoute>} />
+          <Route path="/admin/bank-credits" element={<RoleRoute roles={["admin"]}><AdminBankCredits /></RoleRoute>} />
           <Route path="/merchant" element={<RoleRoute roles={["merchant"]}><MerchantAccount /></RoleRoute>} />
           <Route path="/merchant/credentials" element={<RoleRoute roles={["merchant"]}><MerchantCredentials /></RoleRoute>} />
           <Route path="/merchant/team" element={<RoleRoute roles={["merchant"]}><MerchantTeam /></RoleRoute>} />

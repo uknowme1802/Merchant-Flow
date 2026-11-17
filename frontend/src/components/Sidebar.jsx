@@ -1,4 +1,4 @@
-import { LayoutDashboard, CreditCard, BarChart3, ShieldCheck, ShoppingCart, KeyRound, Webhook, Store, Landmark, Users as UsersIcon } from "lucide-react"
+import { LayoutDashboard, CreditCard, BarChart3, ShieldCheck, ShoppingCart, KeyRound, Webhook, Store, Landmark, Banknote, Users as UsersIcon } from "lucide-react"
 import { useContext } from "react"
 import { NavLink } from "react-router-dom"
 import { AuthContext } from "../context/AuthContext"
@@ -18,6 +18,7 @@ const PLATFORM_LINKS = [
     { to: "/analytics", label: "Analytics", icon: BarChart3 },
     { to: "/admin/merchants", label: "Merchants", icon: Store, admin: true },
     { to: "/admin/banks", label: "Banks", icon: Landmark, admin: true },
+    { to: "/admin/bank-credits", label: "Bank Credits", icon: Banknote, admin: true },
     { to: "/users", label: "Users", icon: UsersIcon, admin: true },
     { to: "/security", label: "Security", icon: ShieldCheck },
     { to: "/checkout", label: "Checkout", icon: ShoppingCart },
