@@ -14,13 +14,13 @@ export default function MerchantCredentials() {
   const [fresh, setFresh] = useState(null) // { mid, secret, environment } shown once
   const [busy, setBusy] = useState(false)
 
-  const load = async () => {
-    try {
-      const [k, m] = await Promise.all([API.get("/merchant/credentials"), API.get("/merchant/me")])
-      setKeys(k.data.data)
-      setMe(m.data)
-    } catch { /* interceptor shows the error */ }
-  }
+  const load = () =>
+    Promise.all([API.get("/merchant/credentials"), API.get("/merchant/me")])
+      .then(([k, m]) => {
+        setKeys(k.data.data)
+        setMe(m.data)
+      })
+      .catch(() => { /* interceptor shows the error */ })
 
   useEffect(() => { load() }, [])
 

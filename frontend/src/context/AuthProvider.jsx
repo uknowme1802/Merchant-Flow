@@ -1,30 +1,26 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { AuthContext } from "./AuthContext";
+
+// Read the saved session once, before the first render, so no effect is needed
+const restoreUser = () => {
+  try {
+    const storedUser = localStorage.getItem("user");
+    const token = localStorage.getItem("token");
+
+    if (storedUser && token) {
+      return JSON.parse(storedUser);
+    }
+    return null;
+  } catch (err) {
+    console.error("Auth restore error:", err);
+    localStorage.clear();
+    return null;
+  }
+};
 
 export const AuthProvider = ({ children }) => {
 
-  const [user, setUser] = useState(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    try {
-      const storedUser = localStorage.getItem("user");
-      const token = localStorage.getItem("token");
-
-      if (storedUser && token) {
-        setUser(JSON.parse(storedUser));
-      } else {
-        setUser(null);
-      }
-
-    } catch (err) {
-      console.error("Auth restore error:", err);
-      localStorage.clear();
-      setUser(null);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  const [user, setUser] = useState(restoreUser);
 
   const login = (userData, token, refreshToken) => {
     localStorage.setItem("user", JSON.stringify(userData));
@@ -48,10 +44,6 @@ export const AuthProvider = ({ children }) => {
     setUser(null);
     window.location.href = "/";
   };
-
-  if (loading) {
-    return null; // or loader
-  }
 
   return (
     <AuthContext.Provider value={{ user, login, logout }}>
