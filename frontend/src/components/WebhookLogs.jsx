@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import { Search, RefreshCw, RotateCw } from "lucide-react";
 import toast from "react-hot-toast";
 import API from "../services/api";
@@ -17,11 +17,16 @@ export default function WebhookLogs() {
     const [search, setSearch] = useState("");
     const [query, setQuery] = useState("");
     const [page, setPage] = useState(1);
-    const [logs, setLogs] = useState([]);
-    const [total, setTotal] = useState(0);
-    const [loading, setLoading] = useState(true);
-    const [failed, setFailed] = useState(false);
+    const [reloadKey, setReloadKey] = useState(0);
+    // The last finished request, tagged with the key it was made for
+    const [result, setResult] = useState({ key: null, logs: [], total: 0, failed: false });
     const [replaying, setReplaying] = useState(null);
+
+    // "Loading" is derived: true while the latest result is for an older page, search or refresh
+    const requestKey = `${page}|${query}|${reloadKey}`;
+    const loading = result.key !== requestKey;
+    const { logs, total, failed } = result;
+    const reload = () => setReloadKey((k) => k + 1);
 
     // Debounce typing so we don't hit the API on every keystroke
     useEffect(() => {
@@ -32,26 +37,21 @@ export default function WebhookLogs() {
         return () => clearTimeout(timer);
     }, [search]);
 
-    const loadLogs = useCallback(async () => {
-        setLoading(true);
-        setFailed(false);
-        try {
-            const params = { page, limit: PAGE_SIZE };
-            if (query) params.transactionId = query;
-            const res = await API.get("/webhooks/deliveries", { params });
-            setLogs(res.data.data);
-            setTotal(res.data.total);
-        } catch {
-            // API interceptor already toasts 401/403/500
-            setFailed(true);
-        } finally {
-            setLoading(false);
-        }
-    }, [page, query]);
-
     useEffect(() => {
-        loadLogs();
-    }, [loadLogs]);
+        let cancelled = false;
+        const key = `${page}|${query}|${reloadKey}`;
+        const params = { page, limit: PAGE_SIZE };
+        if (query) params.transactionId = query;
+        API.get("/webhooks/deliveries", { params })
+            .then((res) => {
+                if (!cancelled) setResult({ key, logs: res.data.data, total: res.data.total, failed: false });
+            })
+            .catch(() => {
+                // API interceptor already toasts 401/403/500
+                if (!cancelled) setResult((prev) => ({ ...prev, key, failed: true }));
+            });
+        return () => { cancelled = true; };
+    }, [page, query, reloadKey]);
 
     const replay = async (id) => {
         setReplaying(id);
@@ -62,7 +62,7 @@ export default function WebhookLogs() {
             } else {
                 toast.error(res.data.data.error || "Receiver still failing");
             }
-            await loadLogs();
+            reload();
         } catch (error) {
             toast.error(error.response?.data?.message || "Replay failed");
         } finally {
@@ -87,7 +87,7 @@ export default function WebhookLogs() {
                     />
                 </div>
                 <button
-                    onClick={loadLogs}
+                    onClick={reload}
                     className="px-3 py-2 border rounded bg-white hover:bg-gray-50 flex items-center justify-center gap-1 text-sm"
                 >
                     <RefreshCw size={14} /> Refresh

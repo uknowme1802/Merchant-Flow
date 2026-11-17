@@ -14,22 +14,13 @@ export default function Dashboard() {
   const [stats, setStats]= useState(null);
   const [loading, setLoading] = useState(true);
   
+  // loading starts true, so nothing needs to set it again on mount
   useEffect(()=>{
-    fetchStats();
+    API.get("/dashboard")
+      .then(res => setStats(res.data))
+      .catch(err => console.error(err))
+      .finally(() => setLoading(false));
   },[]);
-
-  const fetchStats = async () =>{
-    try{
-      setLoading(true);
-
-      const res = await API.get("/dashboard");
-      setStats(res.data);
-    } catch(err){
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
-  };
 
   if (loading) {
     return (

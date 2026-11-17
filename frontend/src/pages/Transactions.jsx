@@ -20,34 +20,33 @@ export default function Transactions(){
   const [lastUpdated, setLastUpdated] = useState(null);
 
   const pageSize = 5;
+  // Does not set loading itself: it starts true, and the buttons use reload()
+  const fetchTransactions = () => {
+    console.log("Fetching transactions...");
+    return API.get("/transactions")
+      .then(res => {
+        console.log("Full API response:", res);
+        console.log("Response data:", res.data);
+        console.log("Transactions array:", res.data.data);
+        setTransactions(res.data.data);
+        setLastUpdated(new Date().toLocaleTimeString());
+      })
+      .catch(err => {
+        console.error("Error fetching transactions:", err)
+        toast.error("Failed to load Transactions")
+      })
+      .finally(() => setLoading(false));
+  }
+
+  const reload = () => {
+    setLoading(true);
+    fetchTransactions();
+  }
+
   useEffect(()=>{
     fetchTransactions();
-    // API.get("/transactions")
-    // .then(res=>setTransactions(res.data))
-    // .catch(err=>console.error(err))
   },[]);
 
-  // if(!transactions){
-  //   return <p>Transactions loading...</p>
-  // }
-  const fetchTransactions = async () =>{
-    try{
-      setLoading(true);
-      console.log("Fetching transactions...");
-      const res = await API.get("/transactions");
-      console.log("Full API response:", res);
-      console.log("Response data:", res.data);
-      console.log("Transactions array:", res.data.data);
-      setTransactions(res.data.data);
-      setLastUpdated(new Date().toLocaleTimeString());
-    }catch(err){
-      console.error("Error fetching transactions:", err)
-      toast.error("Failed to load Transactions")
-    } finally{
-      setLoading(false);
-    }
-  }
-  
   //Skeleton code
   if (loading){
     return (
@@ -108,7 +107,7 @@ export default function Transactions(){
         date: new Date().toISOString().split("T")[0]
       });
       toast.success("Tranaction added!")
-      fetchTransactions();
+      reload();
     } catch(err){
       console.error(err);
       if(err.response?.status === 403){
@@ -133,7 +132,7 @@ export default function Transactions(){
         <button onClick={exportCSV} className="bg-blue-600 text-white px-4 py-2 rounded">
           Export CSV
         </button>
-        <button onClick={fetchTransactions} className="bg-purple-600 text-white px-4 py-2 rounded">
+        <button onClick={reload}className="bg-purple-600 text-white px-4 py-2 rounded">
           🔄 Refresh
         </button>
       </div>
