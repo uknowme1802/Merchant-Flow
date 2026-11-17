@@ -12,6 +12,13 @@ info:
     3. `POST /api/checkout/{id}/verify` with the payer's 12-digit UTR.
     4. Receive `payment.success` on your webhook endpoint and verify `X-Webhook-Signature`.
 
+    **Merchant API flow (orders)**
+    1. Sign your requests with your MID and secret key (see the `merchantSignature` scheme) and check them with `GET /v1/whoami`.
+    2. `POST /v1/orders` with `amountPaise` to create an order; send the customer to the returned `checkoutUrl`.
+    3. The customer pays by UPI and enters the 12-digit UTR on the checkout page (`/api/pay/{orderId}/claim`).
+    4. Read the result with `GET /v1/orders/{orderId}` (`status` is `pending`, `success` or `failed`).
+    Amounts are whole paise. Both sandbox and production modes are simulations; no real money moves.
+
     **Webhook signature:** `HMAC_SHA256(secret, rawBody)` as a hex digest, sent in `X-Webhook-Signature`.
 servers:
   - url: https://merchant-flow-seuw.onrender.com
@@ -31,6 +38,7 @@ tags:
   - name: Merchant Admin
   - name: Bank Admin
   - name: Merchant API
+  - name: Customer Checkout
   - name: Ops
 security:
   - bearerAuth: []
@@ -1038,6 +1046,60 @@ paths:
         "200": { description: "Nothing new: every pair already existed (`created: 0`)" }
         "201": { description: "`created` and `skipped` counts" }
         "404": { description: An unknown merchant or bank; nothing is mapped }
+  /api/admin/bank-credits:
+    get:
+      tags: [Bank Admin]
+      summary: Bank statement (admin)
+      description: Money that arrived in the bank accounts, as entered by an admin. A credit is claimed by at most one order.
+      parameters:
+        - { name: bankId, in: query, schema: { type: string }, description: Only credits received by this bank (its database id) }
+        - { name: claimed, in: query, schema: { type: boolean }, description: "`true` for credits an order has claimed, `false` for open ones" }
+        - { name: page, in: query, schema: { type: integer, default: 1 } }
+        - { name: limit, in: query, schema: { type: integer, default: 20, maximum: 100 } }
+      responses:
+        "200":
+          description: Paginated credits, newest first
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  total: { type: integer }
+                  page: { type: integer }
+                  limit: { type: integer }
+                  data: { type: array, items: { $ref: "#/components/schemas/BankCredit" } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+    post:
+      tags: [Bank Admin]
+      summary: Add a bank statement line (admin)
+      description: Records money that arrived in a bank account. A customer's order claims it by entering the same UTR, for the same amount, on the same bank. The action is audited.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [bankId, amountPaise, utr]
+              properties:
+                bankId: { type: string, description: The bank account's database id }
+                amountPaise: { type: integer, minimum: 1, example: 50000 }
+                utr: { type: string, pattern: "^\\d{12}$", example: "412345678901" }
+                receivedAt: { type: string, format: date-time, description: Defaults to now; cannot be in the future }
+                note: { type: string, maxLength: 200 }
+      responses:
+        "201":
+          description: Created
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  credit: { $ref: "#/components/schemas/BankCredit" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { description: Unknown bank account }
+        "409": { description: "A credit with this UTR already exists" }
   /v1/whoami:
     get:
       tags: [Merchant API]
@@ -1052,6 +1114,147 @@ paths:
         "401": { description: Invalid credentials }
         "403": { description: Merchant not active }
         "429": { description: Per-merchant rate limit exceeded }
+  /v1/orders:
+    post:
+      tags: [Merchant API]
+      summary: Create an order
+      description: |
+        Creates a payment request and picks the bank account the customer must pay. Send the customer to
+        `checkoutUrl`; they pay by UPI and enter the 12-digit UTR, which completes the order.
+
+        - The key must belong to the merchant's current mode: a sandbox key for a sandbox merchant, a live
+          key for a production merchant. Both modes are simulations; no real money moves.
+        - The amount must be within the merchant's own minimum and maximum, if set.
+        - Send a `merchantOrderId` to make the call safe to retry: repeating it with the same amount returns
+          the existing order (200); with a different amount it is refused (409).
+        - A pending order expires after 15 minutes and becomes `failed`.
+      security:
+        - merchantSignature: []
+      parameters:
+        - { name: X-MID, in: header, required: true, schema: { type: string } }
+        - { name: X-Timestamp, in: header, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/CreateOrderInput" }
+      responses:
+        "201":
+          description: Order created
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrderResponse" }
+        "200":
+          description: "`merchantOrderId` was already used with the same amount; the existing order is returned"
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrderResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { description: Invalid credentials }
+        "403":
+          description: "`code` is `WRONG_ENVIRONMENT` (key does not match the merchant's mode) or `MERCHANT_NOT_ACTIVE`"
+          content:
+            application/json: { schema: { $ref: "#/components/schemas/Error" } }
+        "409":
+          description: "`MERCHANT_ORDER_ID_REUSED`: that `merchantOrderId` belongs to an order with a different amount"
+          content:
+            application/json: { schema: { $ref: "#/components/schemas/Error" } }
+        "422":
+          description: "`AMOUNT_OUT_OF_RANGE`: outside this merchant's minimum or maximum"
+          content:
+            application/json: { schema: { $ref: "#/components/schemas/Error" } }
+        "429": { description: Per-merchant rate limit exceeded }
+        "503":
+          description: "`NO_BANK_AVAILABLE`: the merchant has no active, verified UPI bank mapped"
+          content:
+            application/json: { schema: { $ref: "#/components/schemas/Error" } }
+  /v1/orders/{orderId}:
+    get:
+      tags: [Merchant API]
+      summary: Get an order
+      description: Returns one of your own orders in your current mode. An overdue pending order is returned as `failed`.
+      security:
+        - merchantSignature: []
+      parameters:
+        - { name: X-MID, in: header, required: true, schema: { type: string } }
+        - { name: X-Timestamp, in: header, required: true, schema: { type: string } }
+        - { name: orderId, in: path, required: true, schema: { type: string, example: ord_k3x9f2ab7mqp3x9f } }
+      responses:
+        "200":
+          description: The order
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OrderResponse" }
+        "401": { description: Invalid credentials }
+        "404": { description: Unknown order, or it belongs to another merchant or mode }
+        "429": { description: Per-merchant rate limit exceeded }
+  /api/pay/{orderId}:
+    get:
+      tags: [Customer Checkout]
+      summary: Checkout page data
+      description: |
+        What the customer's checkout page shows. No login: the order id in the address is the only key.
+        Payment details (UPI id, UPI link and QR code) are included only while the order is `pending`.
+        The bank account number and IFSC are never returned. Rate limited per IP and order.
+      security: []
+      parameters:
+        - { name: orderId, in: path, required: true, schema: { type: string, example: ord_k3x9f2ab7mqp3x9f } }
+      responses:
+        "200":
+          description: The order as the customer sees it
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  order: { $ref: "#/components/schemas/CheckoutOrder" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+  /api/pay/{orderId}/claim:
+    post:
+      tags: [Customer Checkout]
+      summary: Claim a payment with its UTR
+      description: |
+        The customer enters the 12-digit UTR from their payment app. The order is paid only if an unclaimed
+        statement line exists with that UTR, for the same amount, on the bank this order asked them to pay.
+        A line can be claimed once, however many orders try. "Not found" never reveals whether the UTR exists
+        for something else. Limited to 10 tries per order and IP per 10 minutes.
+      security: []
+      parameters:
+        - { name: orderId, in: path, required: true, schema: { type: string, example: ord_k3x9f2ab7mqp3x9f } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [utr]
+              properties:
+                utr: { type: string, pattern: "^\\d{12}$", example: "412345678901" }
+      responses:
+        "200":
+          description: Paid; the order is now `success`
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  order: { $ref: "#/components/schemas/CheckoutOrder" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404":
+          description: "`PAYMENT_NOT_FOUND` (no matching unclaimed payment; the customer may retry) or `ORDER_NOT_FOUND`"
+          content:
+            application/json: { schema: { $ref: "#/components/schemas/Error" } }
+        "409":
+          description: "`ORDER_NOT_PENDING`: the order is already paid or has expired"
+          content:
+            application/json: { schema: { $ref: "#/components/schemas/Error" } }
+        "429":
+          description: "`TOO_MANY_ATTEMPTS`"
+          content:
+            application/json: { schema: { $ref: "#/components/schemas/Error" } }
   /health:
     get:
       tags: [Ops]
@@ -1162,7 +1365,82 @@ components:
       type: object
       properties:
         success: { type: boolean, example: false }
+        code: { type: string, description: "Stable machine-readable code on some errors, for example `NO_BANK_AVAILABLE`. Branch on this, not on `message`.", example: NO_BANK_AVAILABLE }
         message: { type: string }
+    CreateOrderInput:
+      type: object
+      required: [amountPaise]
+      properties:
+        amountPaise: { type: integer, minimum: 1, maximum: 100000000, example: 50000, description: "Whole paise: 50000 is Rs 500.00. Must be a number, not text." }
+        merchantOrderId: { type: string, maxLength: 64, pattern: "^[A-Za-z0-9_\\-.:]{1,64}$", example: INV-1001, description: Your own reference; also makes the call safe to retry }
+        description: { type: string, maxLength: 200 }
+        customerName: { type: string, maxLength: 120 }
+    Order:
+      type: object
+      properties:
+        orderId: { type: string, example: ord_k3x9f2ab7mqp3x9f }
+        merchantOrderId: { type: string, nullable: true }
+        mode: { type: string, enum: [sandbox, production] }
+        amountPaise: { type: integer }
+        currency: { type: string, example: INR }
+        description: { type: string }
+        customerName: { type: string }
+        status: { type: string, enum: [pending, success, failed] }
+        statusReason: { type: string, nullable: true, example: expired }
+        utr: { type: string, nullable: true, description: Set once the order is paid }
+        expiresAt: { type: string, format: date-time }
+        paidAt: { type: string, format: date-time, nullable: true }
+        createdAt: { type: string, format: date-time }
+        checkoutUrl: { type: string, format: uri, description: Send the customer here to pay }
+    OrderResponse:
+      type: object
+      properties:
+        success: { type: boolean }
+        order: { $ref: "#/components/schemas/Order" }
+    CheckoutOrder:
+      type: object
+      description: The order as the customer's checkout page shows it
+      properties:
+        orderId: { type: string }
+        status: { type: string, enum: [pending, success, failed] }
+        statusReason: { type: string, nullable: true }
+        mode: { type: string, enum: [sandbox, production], description: The page shows a Sandbox or Production badge }
+        amountPaise: { type: integer }
+        currency: { type: string }
+        description: { type: string }
+        merchantName: { type: string }
+        expiresAt: { type: string, format: date-time }
+        paidAt: { type: string, format: date-time, nullable: true }
+        payment:
+          type: object
+          nullable: true
+          description: Only while the order is `pending`
+          properties:
+            holderName: { type: string }
+            bankName: { type: string }
+            upiId: { type: string }
+            upiUri: { type: string, description: A `upi://pay` link that pre-fills payee and amount }
+            qrDataUrl: { type: string, nullable: true, description: "PNG data URL of the QR code; null when the bank has QR switched off" }
+    BankCredit:
+      type: object
+      properties:
+        id: { type: string }
+        bank:
+          type: object
+          properties:
+            id: { type: string }
+            bankId: { type: string, example: bank_k3x9f2ab }
+            bankName: { type: string }
+            holderName: { type: string }
+        amountPaise: { type: integer }
+        utr: { type: string }
+        receivedAt: { type: string, format: date-time }
+        note: { type: string }
+        claimed: { type: boolean }
+        claimedAt: { type: string, format: date-time, nullable: true }
+        claimedMode: { type: string, enum: [sandbox, production], nullable: true }
+        claimedByOrder: { type: string, nullable: true, description: The order id that claimed it }
+        createdAt: { type: string, format: date-time }
     WebhookPayload:
       type: object
       description: Body POSTed to your endpoint. Headers `X-Webhook-Signature` and `X-Webhook-Event` are included.
