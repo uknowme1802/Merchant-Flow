@@ -1,11 +1,13 @@
-const rateLimit = require("express-rate-limit");
+const { rateLimit, ipKeyGenerator } = require("express-rate-limit");
 
 // The customer checkout page has no login, so it is limited per IP and order instead.
 //
 //   viewLimiter  : the page polls its status every few seconds, so this is generous.
 //   claimLimiter : every UTR try is a guess against the bank statement, so this is tight: 10 tries
 //                  per 10 minutes for one order from one address.
-const keyFor = (req) => `${req.ip}:${req.params.orderId}`;
+// ipKeyGenerator groups an IPv6 address by its /56 network, so a user cannot dodge the limit by
+// hopping between addresses they control.
+const keyFor = (req) => `${ipKeyGenerator(req.ip)}:${req.params.orderId}`;
 
 const viewLimiter = rateLimit({
     windowMs: 60 * 1000,
