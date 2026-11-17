@@ -16,6 +16,8 @@ const connectDB = require("./config/db");
 const redis = require("./config/redis");
 const { initSocket, getIO } = require("./socket");
 const { startRetryWorker } = require("./utils/webhookDispatcher");
+const { startCallbackWorker } = require("./services/callbackService");
+const { expireDueOrders } = require("./services/orderService");
 
 const PORT = process.env.PORT || 5000;
 
@@ -30,6 +32,8 @@ const server = http.createServer(app);
 initSocket(server);
 
 const stopRetryWorker = startRetryWorker();
+// Merchant callbacks (retry every 5 minutes until HTTP 200) and the 15-minute order expiry sweep.
+const stopCallbackWorker = startCallbackWorker(expireDueOrders);
 
 server.listen(PORT, () => {
     logger.info(`Server running at PORT: ${PORT}`, { env: process.env.NODE_ENV || "development" });
@@ -46,6 +50,7 @@ const gracefulShutdown = (signal, exitCode = 0) => {
     logger.info(`${signal} received, shutting down`);
 
     stopRetryWorker();
+    stopCallbackWorker();
 
     const forceExit = setTimeout(() => {
         logger.error("Shutdown timed out, forcing exit");

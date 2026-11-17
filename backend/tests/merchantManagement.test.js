@@ -7,6 +7,9 @@ jest.mock("../models/MerchantCredential", () => require("./helpers/mockModels").
 jest.mock("../models/AuditLog", () => require("./helpers/mockModels").AuditLog);
 jest.mock("../models/BankAccount", () => require("./helpers/mockModels").BankAccount);
 jest.mock("../models/MerchantBankMapping", () => require("./helpers/mockModels").MerchantBankMapping);
+// Switching mode also cancels waiting callbacks (covered against a real database in
+// callbacks.realdb.test.js); here there is no database, so the call is a no-op.
+jest.mock("../models/CallbackDelivery", () => ({ updateMany: async () => ({ modifiedCount: 0 }) }));
 
 const request = require("supertest");
 const app = require("../app");

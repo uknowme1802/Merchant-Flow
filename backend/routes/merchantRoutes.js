@@ -12,6 +12,7 @@ const schemas = require("../validators/schemas");
 const merchant = require("../controllers/merchantController");
 const credentials = require("../controllers/merchantCredentialController");
 const audit = require("../controllers/auditController");
+const callbacks = require("../controllers/callbackController");
 
 // Public: a business applies for an account. Logging in afterwards uses the normal /api/auth/login.
 router.post("/signup", signupRateLimiter, validate(schemas.merchantSignup), merchant.signup);
@@ -32,6 +33,10 @@ router.delete("/credentials/:id", canManageKeys, validateObjectId("id"), credent
 router.get("/team", merchant.listTeam);
 router.post("/team", requireMerchantRole("owner"), validate(schemas.addTeamMember), merchant.addTeamMember);
 router.delete("/team/:id", requireMerchantRole("owner"), validateObjectId("id"), merchant.removeTeamMember);
+
+// Callbacks sent to this merchant: everyone can see them, owner and developer can resend.
+router.get("/callbacks", validateQuery(schemas.callbackListQuery), callbacks.merchantList);
+router.post("/callbacks/:id/resend", requireMerchantRole("owner", "developer"), validateObjectId("id"), callbacks.merchantResend);
 
 router.get("/audit-logs", requireMerchantRole("owner"), validateQuery(schemas.auditQuery), audit.listOwnAuditLogs);
 

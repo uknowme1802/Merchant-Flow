@@ -38,6 +38,8 @@ const merchantSchema = new mongoose.Schema({
     // Edit Config. Percentages are integer basis points so there is no floating-point drift.
     config: {
         webhookAutoTrigger: { type: Boolean, default: DEFAULT_MERCHANT_CONFIG.webhookAutoTrigger },
+        // Where order callbacks are sent. Null means no callbacks.
+        callbackUrl: { type: String, trim: true, maxlength: 500, default: null },
         payinBps: { type: Number, default: DEFAULT_MERCHANT_CONFIG.payinBps, min: 0, max: 10000 },
         payoutBps: { type: Number, default: DEFAULT_MERCHANT_CONFIG.payoutBps, min: 0, max: 10000 },
         settlementBps: { type: Number, default: DEFAULT_MERCHANT_CONFIG.settlementBps, min: 0, max: 10000 },
