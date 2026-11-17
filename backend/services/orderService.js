@@ -2,6 +2,7 @@ const Order = require("../models/Order");
 const ApiError = require("../utils/ApiError");
 const { generateOrderId } = require("../utils/identifiers");
 const { selectBank } = require("./bankSelectionService");
+const { enqueueOrderCallback } = require("./callbackService");
 const { ORDER_EXPIRY_MINUTES } = require("../constants/order");
 const { MODE_ENVIRONMENT } = require("../constants/merchant");
 
@@ -85,17 +86,29 @@ const expireIfDue = async (order) => {
         { returnDocument: "after" }
     );
     // If it lost a race to a successful claim, read the real state.
-    return updated || (await Order.findById(order._id));
+    if (!updated) return Order.findById(order._id);
+    await enqueueOrderCallback(updated);
+    return updated;
 };
 
-// Fails every pending order whose time ran out. A scheduled job calls this (Phase 2b); reading an
+// Fails every pending order whose time ran out. The background worker calls this; reading an
 // order also expires it, so nothing waits on the job.
-const expireDueOrders = async () => {
-    const res = await Order.updateMany(
-        { status: "pending", expiresAt: { $lte: new Date() } },
-        { $set: { status: "failed", statusReason: "expired" } }
-    );
-    return res.modifiedCount;
+const expireDueOrders = async (batchSize = 200) => {
+    // One at a time, so each order that really expired gets its own callback and an order that was
+    // paid at the last second is left alone.
+    const due = await Order.find({ status: "pending", expiresAt: { $lte: new Date() } }).limit(batchSize);
+    let expired = 0;
+    for (const order of due) {
+        const updated = await Order.findOneAndUpdate(
+            { _id: order._id, status: "pending", expiresAt: { $lte: new Date() } },
+            { $set: { status: "failed", statusReason: "expired" } },
+            { returnDocument: "after" }
+        );
+        if (!updated) continue;
+        expired += 1;
+        await enqueueOrderCallback(updated);
+    }
+    return expired;
 };
 
 const getOrderByPublicId = async (orderId) => {

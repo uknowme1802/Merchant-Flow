@@ -50,6 +50,21 @@ describe("openapi.yaml", () => {
         expect(Object.keys(spec.paths["/api/admin/bank-credits"]).sort()).toEqual(["get", "post"]);
     });
 
+    test("documents the Phase 2b callback endpoints and the callback body", () => {
+        expect(Object.keys(spec.paths["/api/webhook-events"])).toEqual(["get"]);
+        expect(Object.keys(spec.paths["/api/webhook-events/{id}/resend"])).toEqual(["post"]);
+        expect(Object.keys(spec.paths["/api/webhook-events/{id}/body"])).toEqual(["get"]);
+        expect(Object.keys(spec.paths["/api/merchant/callbacks"])).toEqual(["get"]);
+        expect(Object.keys(spec.paths["/api/merchant/callbacks/{id}/resend"])).toEqual(["post"]);
+        expect(spec.components.schemas.CallbackPayload.properties.event.enum).toEqual(["order.success", "order.failed"]);
+    });
+
+    test("the callback statuses and events in the docs match the code", () => {
+        const { CALLBACK_STATUS, CALLBACK_EVENTS } = require("../constants/callback");
+        expect(spec.components.schemas.CallbackDelivery.properties.status.enum).toEqual(CALLBACK_STATUS);
+        expect(spec.components.schemas.CallbackDelivery.properties.event.enum).toEqual(CALLBACK_EVENTS);
+    });
+
     test("the signed order endpoints require a signature and the public ones require nothing", () => {
         for (const p of ["/v1/orders", "/v1/orders/{orderId}"]) {
             const op = Object.values(spec.paths[p])[0];

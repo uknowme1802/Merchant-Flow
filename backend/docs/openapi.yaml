@@ -19,6 +19,13 @@ info:
     4. Read the result with `GET /v1/orders/{orderId}` (`status` is `pending`, `success` or `failed`).
     Amounts are whole paise. Both sandbox and production modes are simulations; no real money moves.
 
+    **Callbacks.** When an order is paid or fails (including expiring after 15 minutes), we `POST` a JSON message
+    to the merchant's `callbackUrl` (set by an admin in Edit Config). The message is signed:
+    `X-Callback-Signature` is `HMAC_SHA256(secret, rawBody)` as a hex digest, made with the merchant's active key
+    for the order's mode, and `X-Callback-Event` is `order.success` or `order.failed`. Answer with HTTP **200**;
+    any other answer, or no answer within 5 seconds, counts as a failure and we retry every 5 minutes, up to 10
+    attempts. Every retry sends the same body. A callback can be resent by hand from the dashboard.
+
     **Webhook signature:** `HMAC_SHA256(secret, rawBody)` as a hex digest, sent in `X-Webhook-Signature`.
 servers:
   - url: https://merchant-flow-seuw.onrender.com
@@ -39,6 +46,7 @@ tags:
   - name: Bank Admin
   - name: Merchant API
   - name: Customer Checkout
+  - name: Callbacks
   - name: Ops
 security:
   - bearerAuth: []
@@ -732,7 +740,8 @@ paths:
               type: object
               minProperties: 1
               properties:
-                webhookAutoTrigger: { type: boolean }
+                webhookAutoTrigger: { type: boolean, description: Switch callbacks to this merchant on or off }
+                callbackUrl: { type: string, format: uri, nullable: true, maxLength: 500, description: "Where order callbacks are sent. `https` only in production, and it must resolve to a public address. `null` clears it." }
                 payinBps: { type: integer, minimum: 0, maximum: 10000 }
                 payoutBps: { type: integer, minimum: 0, maximum: 10000 }
                 settlementBps: { type: integer, minimum: 0, maximum: 10000 }
@@ -1100,6 +1109,121 @@ paths:
         "400": { $ref: "#/components/responses/BadRequest" }
         "404": { description: Unknown bank account }
         "409": { description: "A credit with this UTR already exists" }
+  /api/webhook-events:
+    get:
+      tags: [Callbacks]
+      summary: Webhook Events - callback delivery log (admin and agent)
+      description: Every callback sent to merchants and what happened, newest first. Open to dashboard admins and agents, not to merchants. The sent body is fetched per delivery from the body endpoint.
+      parameters:
+        - { name: merchantId, in: query, schema: { type: string }, description: Only this merchant (its database id) }
+        - { name: mode, in: query, schema: { type: string, enum: [sandbox, production] } }
+        - { name: status, in: query, schema: { type: string, enum: [pending, delivered, failed, cancelled] } }
+        - { name: orderId, in: query, schema: { type: string, example: ord_k3x9f2ab7mqp3x9f } }
+        - { name: from, in: query, schema: { type: string, format: date-time }, description: Only callbacks created at or after this time }
+        - { name: to, in: query, schema: { type: string, format: date-time }, description: Only callbacks created at or before this time }
+        - { name: page, in: query, schema: { type: integer, default: 1 } }
+        - { name: limit, in: query, schema: { type: integer, default: 20, maximum: 100 } }
+      responses:
+        "200":
+          description: Paginated deliveries
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  total: { type: integer }
+                  page: { type: integer }
+                  limit: { type: integer }
+                  data: { type: array, items: { $ref: "#/components/schemas/CallbackDelivery" } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /api/webhook-events/{id}/body:
+    get:
+      tags: [Callbacks]
+      summary: The message we sent (admin and agent)
+      description: The exact JSON body sent for one callback, for the Data Sent view. The signature is not stored and is not returned.
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          description: The sent message
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  id: { type: string }
+                  orderId: { type: string }
+                  event: { type: string, enum: [order.success, order.failed] }
+                  url: { type: string }
+                  headers: { type: object, additionalProperties: { type: string } }
+                  body: { $ref: "#/components/schemas/CallbackPayload" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /api/webhook-events/{id}/resend:
+    post:
+      tags: [Callbacks]
+      summary: Resend a callback (admin)
+      description: Starts a fresh retry cycle and sends right away. Works for pending, delivered and failed callbacks. Audited.
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          description: The delivery after the new attempt
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  callback: { $ref: "#/components/schemas/CallbackDelivery" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: The callback was cancelled (the merchant changed mode) and cannot be resent }
+  /api/merchant/callbacks:
+    get:
+      tags: [Callbacks]
+      summary: Your callback log (merchant)
+      description: Callbacks sent to your callback URL, in your current mode only. Any team role can read it.
+      parameters:
+        - { name: status, in: query, schema: { type: string, enum: [pending, delivered, failed, cancelled] } }
+        - { name: orderId, in: query, schema: { type: string, example: ord_k3x9f2ab7mqp3x9f } }
+        - { name: page, in: query, schema: { type: integer, default: 1 } }
+        - { name: limit, in: query, schema: { type: integer, default: 20, maximum: 100 } }
+      responses:
+        "200":
+          description: Paginated deliveries
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  total: { type: integer }
+                  page: { type: integer }
+                  limit: { type: integer }
+                  data: { type: array, items: { $ref: "#/components/schemas/CallbackDelivery" } }
+  /api/merchant/callbacks/{id}/resend:
+    post:
+      tags: [Callbacks]
+      summary: Resend one of your callbacks (merchant)
+      description: Owner and developer roles only. A callback that is not yours, or is from the other mode, answers 404.
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "200":
+          description: The delivery after the new attempt
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  callback: { $ref: "#/components/schemas/CallbackDelivery" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: The callback was cancelled and cannot be resent }
   /v1/whoami:
     get:
       tags: [Merchant API]
@@ -1441,6 +1565,48 @@ components:
         claimedMode: { type: string, enum: [sandbox, production], nullable: true }
         claimedByOrder: { type: string, nullable: true, description: The order id that claimed it }
         createdAt: { type: string, format: date-time }
+    CallbackDelivery:
+      type: object
+      properties:
+        id: { type: string }
+        orderId: { type: string, example: ord_k3x9f2ab7mqp3x9f }
+        merchant:
+          type: object
+          description: Included in the admin log only
+          properties:
+            id: { type: string }
+            mid: { type: string }
+            businessName: { type: string }
+        mode: { type: string, enum: [sandbox, production] }
+        event: { type: string, enum: [order.success, order.failed] }
+        url: { type: string }
+        status: { type: string, enum: [pending, delivered, failed, cancelled], description: "`pending` is waiting for its next attempt; `failed` ran out of attempts" }
+        attempts: { type: integer }
+        maxAttempts: { type: integer }
+        statusCode: { type: integer, nullable: true, description: The receiver's last answer; null when it did not answer }
+        error: { type: string, nullable: true }
+        lastAttemptAt: { type: string, format: date-time, nullable: true }
+        nextRetryAt: { type: string, format: date-time, nullable: true }
+        deliveredAt: { type: string, format: date-time, nullable: true }
+        createdAt: { type: string, format: date-time }
+    CallbackPayload:
+      type: object
+      description: Body POSTed to your callback URL. Headers `X-Callback-Signature` and `X-Callback-Event` are included.
+      properties:
+        event: { type: string, enum: [order.success, order.failed] }
+        timestamp: { type: string, format: date-time }
+        data:
+          type: object
+          properties:
+            orderId: { type: string }
+            merchantOrderId: { type: string, nullable: true }
+            status: { type: string, enum: [success, failed] }
+            statusReason: { type: string, nullable: true, example: expired }
+            amountPaise: { type: integer }
+            currency: { type: string, example: INR }
+            utr: { type: string, nullable: true }
+            paidAt: { type: string, format: date-time, nullable: true }
+            mode: { type: string, enum: [sandbox, production] }
     WebhookPayload:
       type: object
       description: Body POSTed to your endpoint. Headers `X-Webhook-Signature` and `X-Webhook-Event` are included.

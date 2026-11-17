@@ -8,6 +8,8 @@ const { generateMid, generateTempPassword } = require("../utils/identifiers");
 const credentialService = require("./credentialService");
 const sessionRevocation = require("../utils/sessionRevocation");
 const userService = require("./userService");
+const { assertPublicUrl } = require("../utils/ssrf");
+const callbackService = require("./callbackService");
 const { MERCHANT_ACTIONS, MODE_ENVIRONMENT, DEFAULT_MERCHANT_CONFIG } = require("../constants/merchant");
 
 const MAX_MID_ATTEMPTS = 5;
@@ -222,6 +224,7 @@ const removeTeamMember = async ({ merchantId, userId }) => {
 
 const toConfigView = (config = {}) => ({
     webhookAutoTrigger: config.webhookAutoTrigger ?? DEFAULT_MERCHANT_CONFIG.webhookAutoTrigger,
+    callbackUrl: config.callbackUrl ?? null,
     payinBps: config.payinBps ?? DEFAULT_MERCHANT_CONFIG.payinBps,
     payoutBps: config.payoutBps ?? DEFAULT_MERCHANT_CONFIG.payoutBps,
     settlementBps: config.settlementBps ?? DEFAULT_MERCHANT_CONFIG.settlementBps,
@@ -288,6 +291,13 @@ const updateConfig = async (merchantId, patch) => {
     if (next.minAmountPaise != null && next.maxAmountPaise != null && next.minAmountPaise > next.maxAmountPaise) {
         throw new ApiError(400, "minAmountPaise cannot be above maxAmountPaise");
     }
+    if (next.callbackUrl) {
+        if (process.env.NODE_ENV === "production" && !next.callbackUrl.startsWith("https://")) {
+            throw new ApiError(400, "callbackUrl must start with https://");
+        }
+        // The same guard the sender uses: no localhost, private networks or cloud metadata.
+        await assertPublicUrl(next.callbackUrl).catch((err) => { throw new ApiError(400, err.message.replace("Webhook URL", "callbackUrl")); });
+    }
 
     merchant.config = next;
     if (remark !== undefined) merchant.remark = remark;
@@ -336,6 +346,9 @@ const switchMode = async ({ merchantId, mode, confirmMid, reason, adminId }) => 
 
     merchant.mode = mode;
     await merchant.save();
+
+    // A test order must never call the production URL, so what is still waiting is stopped.
+    await callbackService.cancelPendingCallbacks(merchant._id, from);
 
     const key = await credentialService.generateKey({ merchant, createdBy: adminId });
     return { merchant, from, key };

@@ -5,6 +5,7 @@ const { BUSINESS_TYPES, ENVIRONMENTS, MERCHANT_STATUS, MERCHANT_MODES } = requir
 const { IFSC_REGEX, ACCOUNT_NUMBER_REGEX, UPI_ID_REGEX, BANK_STATUS, BANK_METHODS } = require("../constants/bank");
 const { STAFF_ROLES } = require("../constants/roles");
 const { UTR_REGEX, MERCHANT_ORDER_ID_REGEX, MAX_ORDER_PAISE } = require("../constants/order");
+const { CALLBACK_STATUS } = require("../constants/callback");
 
 const paise = Joi.number().integer().min(0).max(100000000000);
 const objectId = Joi.string().pattern(/^[a-fA-F0-9]{24}$/);
@@ -159,6 +160,7 @@ module.exports = {
 
     merchantConfig: Joi.object({
         webhookAutoTrigger: Joi.boolean(),
+        callbackUrl: Joi.string().trim().max(500).uri({ scheme: ["https", "http"] }).allow(null),
         payinBps: Joi.number().integer().min(0).max(10000),
         payoutBps: Joi.number().integer().min(0).max(10000),
         settlementBps: Joi.number().integer().min(0).max(10000),
@@ -264,6 +266,17 @@ module.exports = {
     bankCreditListQuery: Joi.object({
         bankId: objectId.optional(),
         claimed: Joi.boolean().optional(),
+        page: Joi.number().integer().min(1).default(1),
+        limit: Joi.number().integer().min(1).max(100).default(20)
+    }),
+
+    callbackListQuery: Joi.object({
+        merchantId: objectId.optional(),
+        mode: Joi.string().valid(...MERCHANT_MODES).optional(),
+        status: Joi.string().valid(...CALLBACK_STATUS).optional(),
+        orderId: Joi.string().pattern(/^ord_[a-z0-9]{16}$/).optional(),
+        from: Joi.date().iso().optional(),
+        to: Joi.date().iso().when("from", { is: Joi.exist(), then: Joi.date().min(Joi.ref("from")) }).optional(),
         page: Joi.number().integer().min(1).default(1),
         limit: Joi.number().integer().min(1).max(100).default(20)
     }),

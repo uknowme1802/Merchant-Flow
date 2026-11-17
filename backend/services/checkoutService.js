@@ -4,6 +4,7 @@ const Merchant = require("../models/Merchant");
 const ApiError = require("../utils/ApiError");
 const { getOrderByPublicId } = require("./orderService");
 const { claimPayment, CLAIM } = require("./claimService");
+const { enqueueOrderCallback } = require("./callbackService");
 const { allowedOrigins } = require("../config/origins");
 
 // Where the customer pays. CHECKOUT_BASE_URL is the public address of the web app (the page is
@@ -86,7 +87,7 @@ const submitClaim = async (orderId, utr) => {
     if (!order) throw new ApiError(404, "Order not found", "ORDER_NOT_FOUND");
     if (order.status !== "pending") throw notPending(order.status);
 
-    const { result } = await claimPayment(order, utr);
+    const { result, order: paid } = await claimPayment(order, utr);
     if (result === CLAIM.NOT_FOUND) {
         throw new ApiError(
             404,
@@ -99,6 +100,8 @@ const submitClaim = async (orderId, utr) => {
         const fresh = await getOrderByPublicId(orderId);
         throw notPending(fresh?.status ?? "failed");
     }
+    // Tell the merchant. A failure here is logged and never turns a paid order into an error.
+    await enqueueOrderCallback(paid);
     return getCheckoutView(orderId);
 };
 

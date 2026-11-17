@@ -39,6 +39,7 @@ const MODE_ENVIRONMENT = { sandbox: "sandbox", production: "live" };
 // points (250 = 2.50%); amounts are paise.
 const DEFAULT_MERCHANT_CONFIG = {
     webhookAutoTrigger: true,
+    callbackUrl: null,
     payinBps: 0,
     payoutBps: 0,
     settlementBps: 0,

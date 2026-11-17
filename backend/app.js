@@ -29,6 +29,7 @@ const adminBankRoutes = require("./routes/adminBankRoutes");
 const merchantApiRoutes = require("./routes/merchantApiRoutes");
 const payRoutes = require("./routes/payRoutes");
 const adminBankCreditRoutes = require("./routes/adminBankCreditRoutes");
+const webhookEventRoutes = require("./routes/webhookEventRoutes");
 
 const app = express();
 
@@ -70,6 +71,7 @@ app.use("/api/merchant", merchantRoutes);
 app.use("/api/admin", adminMerchantRoutes);
 app.use("/api/admin", adminBankRoutes);
 app.use("/api/admin", adminBankCreditRoutes);
+app.use("/api/webhook-events", webhookEventRoutes);
 app.use("/api/dashboard", dashboardRoutes);
 app.use("/api/transactions", transactionRoutes);
 app.use("/api/users", userRoutes);
