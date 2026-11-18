@@ -13,7 +13,10 @@ const colors = {
   inactive: "bg-gray-100 text-gray-600 ring-gray-500/20",
   open: "bg-amber-50 text-amber-700 ring-amber-600/20",
   claimed: "bg-emerald-50 text-emerald-700 ring-emerald-600/20",
-  deleted: "bg-red-50 text-red-700 ring-red-600/20"
+  delivered: "bg-emerald-50 text-emerald-700 ring-emerald-600/20",
+  failed: "bg-red-50 text-red-700 ring-red-600/20",
+  cancelled: "bg-gray-100 text-gray-600 ring-gray-500/20",
+  deleted:"bg-red-50 text-red-700 ring-red-600/20"
 }
 
 export default function StatusBadge({ value }) {

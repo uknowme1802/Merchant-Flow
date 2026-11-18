@@ -395,6 +395,10 @@ const validateConfig = (f) => {
     errors.minAmount = "The minimum cannot be above the maximum"
   }
   if (f.remark.length > 200) errors.remark = "At most 200 characters"
+  const callbackUrl = f.callbackUrl.trim()
+  if (callbackUrl && (callbackUrl.length > 500 || !/^https?:\/\/\S+$/.test(callbackUrl))) {
+    errors.callbackUrl = "A web address starting with https://, at most 500 characters"
+  }
   return errors
 }
 
@@ -402,6 +406,7 @@ export function EditConfigModal({ merchant, onClose, onSaved }) {
   const config = merchant.config
   const [form, setForm] = useState({
     webhookAutoTrigger: config.webhookAutoTrigger,
+    callbackUrl: config.callbackUrl || "",
     payin: percentInput(config.payinBps),
     payout: percentInput(config.payoutBps),
     settlement: percentInput(config.settlementBps),
@@ -422,6 +427,7 @@ export function EditConfigModal({ merchant, onClose, onSaved }) {
 
     const next = {
       webhookAutoTrigger: form.webhookAutoTrigger,
+      callbackUrl: form.callbackUrl.trim() || null,
       payinBps: bpsFromInput(form.payin),
       payoutBps: bpsFromInput(form.payout),
       settlementBps: bpsFromInput(form.settlement),
@@ -466,6 +472,11 @@ export function EditConfigModal({ merchant, onClose, onSaved }) {
           </span>
         </label>
 
+        <Field label="Callback URL" error={errors.callbackUrl} className="sm:col-span-2"
+          hint="Where we send the signed result of every paid or failed order. Leave empty to send none.">
+          <input className={inputClass} type="url" placeholder="https://merchant.example.com/callback" autoComplete="off"
+            value={form.callbackUrl} onChange={set("callbackUrl")} maxLength={500} />
+        </Field>
         <Field label="Pay-in charge (%)" error={errors.payin}>{number("payin")}</Field>
         <Field label="Payout charge (%)" error={errors.payout}>{number("payout")}</Field>
         <Field label="Settlement rate (%)" error={errors.settlement}>{number("settlement")}</Field>
