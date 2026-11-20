@@ -3,7 +3,7 @@ import { ArrowDownToLine, Banknote, Clock, HandCoins, Hourglass, Percent, Send, 
 import API from "../../services/api"
 import { errorMessage, inputClass, rupees } from "../../utils/format"
 
-// The nine pay-in cards for the whole platform or one merchant. Every figure is added up on the
+// The nine cards, in a Pay-in section (five) and a Payout section (four), for the whole platform or one merchant. Every figure is added up on the
 // server over successful orders in each merchant's current mode. Settlement and payouts are built
 // later, so those cards read zero for now.
 
@@ -53,7 +53,7 @@ export default function PayinOverview() {
     <section className="mb-8">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="text-lg font-semibold tracking-tight">Pay-in overview</h2>
+          <h2 className="text-lg font-semibold tracking-tight">Overview</h2>
           <p className="text-sm text-gray-500">Successful orders, in each merchant's current mode.</p>
         </div>
         <select aria-label="Merchant" className={`${inputClass} !w-auto min-w-56`} value={mid} onChange={(e) => setMid(e.target.value)}>
@@ -65,16 +65,27 @@ export default function PayinOverview() {
       {error && <p role="alert" className="mb-4 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700 ring-1 ring-red-600/10">{error}</p>}
 
       {c && (
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-          <Card title="Total pay-in" value={rupees(c.totalPayinPaise)} note={`${data.successCount} successful orders`} icon={<ArrowDownToLine size={20} />} />
-          <Card title="Pay-in charges" value={rupees(c.payinChargesPaise)} note={m ? `Rate ${percent(m.payinBps)}` : undefined} icon={<Percent size={20} />} />
-          <Card title="Unsettled balance" value={rupees(c.unsettledPaise)} note="What the merchants are owed" icon={<Hourglass size={20} />} />
-          <Card title="To be settled" value={rupees(c.toBeSettledPaise)} note={later} icon={<Clock size={20} />} muted />
-          <Card title="Settled balance" value={rupees(c.settledPaise)} note={later} icon={<Banknote size={20} />} muted />
-          <Card title="Total load balance" value={rupees(c.loadBalancePaise)} note={laterPayout} icon={<WalletCards size={20} />} muted />
-          <Card title="Available balance" value={rupees(c.availablePaise)} note={laterPayout} icon={<Wallet size={20} />} muted />
-          <Card title="Total payout" value={rupees(c.payoutPaise)} note={laterPayout} icon={<Send size={20} />} muted />
-          <Card title="Payout charges" value={rupees(c.payoutChargesPaise)} note={m ? `Rate ${percent(m.payoutBps)}` : laterPayout} icon={<HandCoins size={20} />} muted />
+        <div className="space-y-6">
+          <div>
+            <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-500">Pay-in</h3>
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+              <Card title="Total pay-in" value={rupees(c.totalPayinPaise)} note={`${data.successCount} successful orders`} icon={<ArrowDownToLine size={20} />} />
+              <Card title="Pay-in charges" value={rupees(c.payinChargesPaise)} note={m ? `Rate ${percent(m.payinBps)}` : undefined} icon={<Percent size={20} />} />
+              <Card title="Unsettled balance" value={rupees(c.unsettledPaise)} note="What the merchants are owed" icon={<Hourglass size={20} />} />
+              <Card title="To be settled" value={rupees(c.toBeSettledPaise)} note={later} icon={<Clock size={20} />} muted />
+              <Card title="Settled balance" value={rupees(c.settledPaise)} note={later} icon={<Banknote size={20} />} muted />
+            </div>
+          </div>
+
+          <div>
+            <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-500">Payout</h3>
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+              <Card title="Total load balance" value={rupees(c.loadBalancePaise)} note={laterPayout} icon={<WalletCards size={20} />} muted />
+              <Card title="Available balance" value={rupees(c.availablePaise)} note={laterPayout} icon={<Wallet size={20} />} muted />
+              <Card title="Total payout" value={rupees(c.payoutPaise)} note={laterPayout} icon={<Send size={20} />} muted />
+              <Card title="Payout charges" value={rupees(c.payoutChargesPaise)} note={m ? `Rate ${percent(m.payoutBps)}` : laterPayout} icon={<HandCoins size={20} />} muted />
+            </div>
+          </div>
         </div>
       )}
     </section>
