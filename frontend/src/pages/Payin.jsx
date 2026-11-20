@@ -135,15 +135,21 @@ export default function Payin() {
   const [reloadKey, setReloadKey] = useState(0)
   const [action, setAction] = useState(null) // { order, kind }
   const [resending, setResending] = useState(null)
+  const [options, setOptions] = useState({ merchants: [], banks: [] })
+  const [loadError, setLoadError] = useState("")
 
   const reload = () => setReloadKey((n) => n + 1)
   const rangeInvalid = Boolean(draft.from && draft.to && draft.from > draft.to)
 
   useEffect(() => {
+    API.get("/payin/filter-options").then((res) => setOptions(res.data)).catch(() => {})
+  }, [])
+
+  useEffect(() => {
     let ignore = false
     API.get("/payin/orders", { params: { ...toParams(filters), page, limit } })
-      .then((res) => { if (!ignore) setResult({ data: res.data.data, total: res.data.total, totals: res.data.totals }) })
-      .catch(() => {})
+      .then((res) => { if (!ignore) { setLoadError(""); setResult({ data: res.data.data, total: res.data.total, totals: res.data.totals }) } })
+      .catch((e) => { if (!ignore) setLoadError(errorMessage(e, "Could not load the orders")) })
     return () => { ignore = true }
   }, [filters, page, limit, reloadKey])
 
@@ -191,6 +197,10 @@ export default function Payin() {
         </button>
       </div>
 
+      {loadError && (
+        <p role="alert" className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700 ring-1 ring-red-600/10">{loadError}</p>
+      )}
+
       {totals && (
         <Card>
           <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
@@ -214,8 +224,18 @@ export default function Payin() {
       <Card>
         <form onSubmit={apply} className="mb-5 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <Field label="Search" hint="Transaction ID, merchant order ID or UTR"><input className={inputClass} value={draft.search} onChange={set("search")} autoComplete="off" /></Field>
-          <Field label="Merchant" hint="MID or business name"><input className={inputClass} value={draft.merchant} onChange={set("merchant")} autoComplete="off" /></Field>
-          <Field label="Bank" hint="Bank ID, like bank_…"><input className={inputClass} value={draft.bank} onChange={set("bank")} autoComplete="off" /></Field>
+          <Field label="Merchant">
+            <select className={inputClass} value={draft.merchant} onChange={set("merchant")}>
+              <option value="">All merchants</option>
+              {options.merchants.map((m) => <option key={m.mid} value={m.mid}>{m.businessName} ({m.mid})</option>)}
+            </select>
+          </Field>
+          <Field label="Bank">
+            <select className={inputClass} value={draft.bank} onChange={set("bank")}>
+              <option value="">All banks</option>
+              {options.banks.map((b) => <option key={b.bankId} value={b.bankId}>{b.bankName} - {b.holderName}</option>)}
+            </select>
+          </Field>
           <div className="grid grid-cols-2 gap-3">
             <Field label="Status">
               <select className={inputClass} value={draft.status} onChange={set("status")}>

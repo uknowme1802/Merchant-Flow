@@ -90,6 +90,19 @@ const listOrders = async (query) => {
     return { data: orders.map((o) => ({ order: o, callback: latest.get(String(o._id)) || null })), total, totals, page, limit };
 };
 
+// The choices for the Merchant and Bank drop-downs. Agents cannot open the admin lists, so the tab
+// gets its own small read-only list (public fields only).
+const filterOptions = async () => {
+    const [merchants, banks] = await Promise.all([
+        Merchant.find({}).select("mid businessName").sort({ businessName: 1 }).limit(500).lean(),
+        BankAccount.find({}).select("bankId bankName holderName").sort({ bankName: 1 }).limit(500).lean()
+    ]);
+    return {
+        merchants: merchants.map((m) => ({ mid: m.mid, businessName: m.businessName })),
+        banks: banks.map((b) => ({ bankId: b.bankId, bankName: b.bankName, holderName: b.holderName }))
+    };
+};
+
 // Loads one order by its public id. A pending order past its time fails first, so an action never
 // works on an order that is really over.
 const loadOrder = async (orderId) => {
@@ -174,4 +187,4 @@ const resendCallbackForOrder = async (orderId) => {
     return { order, delivery };
 };
 
-module.exports = { listOrders, updateAmount, updateUtr, failOrder, resendCallbackForOrder };
+module.exports = { listOrders, filterOptions, updateAmount, updateUtr, failOrder, resendCallbackForOrder };

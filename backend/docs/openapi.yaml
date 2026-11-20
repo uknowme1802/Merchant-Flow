@@ -1225,6 +1225,27 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { description: The callback was cancelled and cannot be resent }
+  /api/payin/filter-options:
+    get:
+      tags: [Payin]
+      summary: Payin - merchants and banks for the filter drop-downs (admin and agent)
+      description: Public fields only (MID and business name; bank id, bank name and holder name), up to 500 of each.
+      responses:
+        "200":
+          description: The drop-down choices
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  merchants:
+                    type: array
+                    items: { type: object, properties: { mid: { type: string }, businessName: { type: string } } }
+                  banks:
+                    type: array
+                    items: { type: object, properties: { bankId: { type: string }, bankName: { type: string }, holderName: { type: string } } }
+        "403": { description: Merchants cannot use this }
   /api/payin/orders:
     get:
       tags: [Payin]
