@@ -26,5 +26,6 @@ router.post("/orders/:orderId/resend-callback", payin.resendCallback);
 router.patch("/orders/:orderId/amount", validate(schemas.payinUpdateAmount), payin.updateAmount);
 router.patch("/orders/:orderId/utr", validate(schemas.payinUpdateUtr), payin.updateUtr);
 router.post("/orders/:orderId/fail", validate(schemas.payinFailOrder), payin.fail);
+router.post("/orders/:orderId/refund", validate(schemas.payinRefundOrder), payin.refund);
 
 module.exports = router;

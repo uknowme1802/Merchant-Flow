@@ -22,7 +22,7 @@ info:
     **Callbacks.** When an order is paid or fails (including expiring after 15 minutes), we `POST` a JSON message
     to the merchant's `callbackUrl` (set by an admin in Edit Config). The message is signed:
     `X-Callback-Signature` is `HMAC_SHA256(secret, rawBody)` as a hex digest, made with the merchant's active key
-    for the order's mode, and `X-Callback-Event` is `order.success` or `order.failed`. Answer with HTTP **200**;
+    for the order's mode, and `X-Callback-Event` is `order.success`, `order.failed` or `order.refunded`. Answer with HTTP **200**;
     any other answer, or no answer within 5 seconds, counts as a failure and we retry every 5 minutes, up to 10
     attempts. Every retry sends the same body. A callback can be resent by hand from the dashboard.
 
@@ -1157,7 +1157,7 @@ paths:
                   success: { type: boolean }
                   id: { type: string }
                   orderId: { type: string }
-                  event: { type: string, enum: [order.success, order.failed] }
+                  event: { type: string, enum: [order.success, order.failed, order.refunded] }
                   url: { type: string }
                   headers: { type: object, additionalProperties: { type: string } }
                   body: { $ref: "#/components/schemas/CallbackPayload" }
@@ -1202,7 +1202,7 @@ paths:
         The bank account number is shown as its last four digits only. Any team role can read it.
       parameters:
         - { name: search, in: query, schema: { type: string }, description: "An exact order id, your own order id or UTR" }
-        - { name: status, in: query, schema: { type: string, enum: [pending, success, failed] } }
+        - { name: status, in: query, schema: { type: string, enum: [pending, success, failed, refunded] } }
         - { name: from, in: query, schema: { type: string, format: date-time } }
         - { name: to, in: query, schema: { type: string, format: date-time } }
         - { name: page, in: query, schema: { type: integer, default: 1 } }
@@ -1275,7 +1275,7 @@ paths:
       description: |
         Sums over successful orders in each merchant's current mode. Settlement and payouts are not built yet, so
         every successful order counts as unsettled and the settled, load, payout cards are 0. Orders from before rates
-        were stored count as fee 0. Check: totalPayinPaise = payinChargesPaise + unsettledPaise + toBeSettledPaise + settledPaise.
+        were stored count as fee 0. Amounts are net of refunds (a partly refunded order counts only what is left; a fully refunded one not at all). Check: totalPayinPaise = payinChargesPaise + unsettledPaise + toBeSettledPaise + settledPaise.
       parameters:
         - { name: merchant, in: query, schema: { type: string, example: mid_k3x9f2ab7mqp }, description: "One merchant's MID. Leave out for all merchants" }
       responses:
@@ -1333,7 +1333,7 @@ paths:
         Fee and payable are summed over successful orders only. Open to admins and agents, not to merchants. Staff see the full bank account number.
       parameters:
         - { name: search, in: query, schema: { type: string }, description: "An exact order id, merchant order id or UTR" }
-        - { name: status, in: query, schema: { type: string, enum: [pending, success, failed] } }
+        - { name: status, in: query, schema: { type: string, enum: [pending, success, failed, refunded] } }
         - { name: mode, in: query, schema: { type: string, enum: [sandbox, production] } }
         - { name: merchant, in: query, schema: { type: string }, description: Part of the merchant's MID or business name }
         - { name: bank, in: query, schema: { type: string, example: bank_k3x9f2ab }, description: A bank's public id }
@@ -1466,7 +1466,8 @@ paths:
       summary: Fail a pending or successful order (admin and agent)
       description: |
         Final: a failed order cannot be changed again. The merchant gets an `order.failed` callback with the reason `failed_by_staff` (the typed reason stays in the audit log only).
-        Money that arrived is not touched; refunds come later.
+        Failing a **successful** order also refunds all of it (simulated): `refundedPaise` becomes the whole amount, the fee and payable go to 0, and the callback carries `refundedPaise`.
+        If part of it was already refunded, the rest is refunded now. A pending order has no money to return.
       parameters:
         - $ref: "#/components/parameters/OrderId"
       requestBody:
@@ -1492,6 +1493,44 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { description: "The order is already failed, or changed meanwhile (`ORDER_STATE_CONFLICT`)" }
+  /api/payin/orders/{orderId}/refund:
+    post:
+      tags: [Payin]
+      summary: Refund part or all of a successful order (admin and agent)
+      description: |
+        A simulation: no money moves. Send the amount to refund (whole paise, at most what is left). It can be done more than once; the order
+        stays `success` while something is left, and becomes `refunded` (final) when the total refunded reaches the amount. A partly refunded
+        order can no longer be failed or have its amount changed. The fee and payable are worked out again on what is left.
+        The merchant gets an `order.refunded` callback each time (`refundedPaise` is the total so far; `status` is `refunded` only after the last
+        part, with `statusReason: refunded_by_staff`); the typed reason stays in the audit log only.
+        The dashboard cards count only what is left after refunds.
+      parameters:
+        - $ref: "#/components/parameters/OrderId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [amountPaise, reason]
+              properties:
+                amountPaise: { type: integer, minimum: 1, description: "Whole paise to refund now. Must be a number, not text, and at most the amount still left" }
+                reason: { type: string, minLength: 3, maxLength: 500 }
+      responses:
+        "200":
+          description: The order after the refund
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  order: { $ref: "#/components/schemas/PayinOrder" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: "The order is not successful, or changed meanwhile (`ORDER_STATE_CONFLICT`)" }
+        "422": { description: "More than what is left to refund (`REFUND_EXCEEDS_REMAINING`)" }
   /v1/whoami:
     get:
       tags: [Merchant API]
@@ -1701,7 +1740,7 @@ components:
     PayinCallback:
       type: object
       properties:
-        event: { type: string, enum: [order.success, order.failed] }
+        event: { type: string, enum: [order.success, order.failed, order.refunded] }
         status: { type: string, enum: [pending, delivered, failed, cancelled] }
         statusCode: { type: integer, nullable: true }
         attempts: { type: integer }
@@ -1721,11 +1760,13 @@ components:
             mid: { type: string }
             businessName: { type: string }
         mode: { type: string, enum: [sandbox, production] }
-        status: { type: string, enum: [pending, success, failed] }
+        status: { type: string, enum: [pending, success, failed, refunded] }
         statusReason: { type: string, nullable: true }
         amountPaise: { type: integer }
         feePaise: { type: integer, nullable: true, description: Null until the order succeeds, and for orders without a stored rate }
-        payablePaise: { type: integer, nullable: true }
+        payablePaise: { type: integer, nullable: true, description: What is left for the merchant after the fee, on what is left after refunds }
+        refundedPaise: { type: integer, description: Total refunded by staff so far }
+        refundedAt: { type: string, format: date-time, nullable: true }
         utr: { type: string, nullable: true }
         bank:
           type: object
@@ -1824,7 +1865,7 @@ components:
         currency: { type: string, example: INR }
         description: { type: string }
         customerName: { type: string }
-        status: { type: string, enum: [pending, success, failed] }
+        status: { type: string, enum: [pending, success, failed, refunded] }
         statusReason: { type: string, nullable: true, example: expired }
         utr: { type: string, nullable: true, description: Set once the order is paid }
         expiresAt: { type: string, format: date-time }
@@ -1841,7 +1882,7 @@ components:
       description: The order as the customer's checkout page shows it
       properties:
         orderId: { type: string }
-        status: { type: string, enum: [pending, success, failed] }
+        status: { type: string, enum: [pending, success, failed, refunded] }
         statusReason: { type: string, nullable: true }
         mode: { type: string, enum: [sandbox, production], description: The page shows a Sandbox or Production badge }
         amountPaise: { type: integer }
@@ -1893,7 +1934,7 @@ components:
             mid: { type: string }
             businessName: { type: string }
         mode: { type: string, enum: [sandbox, production] }
-        event: { type: string, enum: [order.success, order.failed] }
+        event: { type: string, enum: [order.success, order.failed, order.refunded] }
         url: { type: string }
         status: { type: string, enum: [pending, delivered, failed, cancelled], description: "`pending` is waiting for its next attempt; `failed` ran out of attempts" }
         attempts: { type: integer }
@@ -1908,16 +1949,18 @@ components:
       type: object
       description: Body POSTed to your callback URL. Headers `X-Callback-Signature` and `X-Callback-Event` are included.
       properties:
-        event: { type: string, enum: [order.success, order.failed] }
+        event: { type: string, enum: [order.success, order.failed, order.refunded] }
         timestamp: { type: string, format: date-time }
         data:
           type: object
           properties:
             orderId: { type: string }
             merchantOrderId: { type: string, nullable: true }
-            status: { type: string, enum: [success, failed] }
+            status: { type: string, enum: [success, failed, refunded] }
             statusReason: { type: string, nullable: true, example: expired }
-            amountPaise: { type: integer }
+            amountPaise: { type: integer, description: The original amount; it does not change when part of it is refunded }
+            refundedPaise: { type: integer, description: "Total refunded so far (0 if none). With `order.refunded` while `status` is still `success`, only part was refunded" }
+            refundedAt: { type: string, format: date-time, nullable: true, description: When the last refund was made }
             currency: { type: string, example: INR }
             utr: { type: string, nullable: true }
             paidAt: { type: string, format: date-time, nullable: true }

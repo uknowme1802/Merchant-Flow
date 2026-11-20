@@ -16,6 +16,7 @@ const colors = {
   success: "bg-emerald-50 text-emerald-700 ring-emerald-600/20",
   delivered:"bg-emerald-50 text-emerald-700 ring-emerald-600/20",
   failed: "bg-red-50 text-red-700 ring-red-600/20",
+  refunded: "bg-violet-50 text-violet-700 ring-violet-600/20",
   cancelled: "bg-gray-100 text-gray-600 ring-gray-500/20",
   deleted:"bg-red-50 text-red-700 ring-red-600/20"
 }

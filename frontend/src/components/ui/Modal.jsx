@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef } from "react"
 import { X } from "lucide-react"
+import { isEnterInTextBox } from "../../utils/keys"
 
 const WIDTHS = { sm: "max-w-md", md: "max-w-xl", lg: "max-w-3xl" }
 
@@ -9,6 +10,7 @@ const WIDTHS = { sm: "max-w-md", md: "max-w-xl", lg: "max-w-3xl" }
 export default function Modal({ title, onClose, children, footer, size = "md", dismissible = true }) {
   const titleId = useId()
   const panel = useRef(null)
+  const footerRef = useRef(null)
 
   // The latest onClose, so the effects below do not re-run (and move focus) on every render.
   const close = useRef(onClose)
@@ -42,6 +44,14 @@ export default function Modal({ title, onClose, children, footer, size = "md", d
         aria-modal="true"
         aria-labelledby={titleId}
         tabIndex={-1}
+        onKeyDown={(e) => {
+          // Enter in a text box presses the last footer button (Cancel comes first, the main action last).
+          if (!isEnterInTextBox(e)) return
+          const main = footerRef.current?.querySelector("button:last-of-type")
+          if (!main) return
+          e.preventDefault()
+          if (!main.disabled) main.click()
+        }}
         className={`bg-white rounded-2xl shadow-float ring-1 ring-gray-900/5 w-full ${WIDTHS[size] || WIDTHS.md} max-h-[90vh] flex flex-col focus:outline-none`}
       >
         <div className="flex items-start justify-between gap-4 px-6 pt-5 pb-3 border-b border-gray-100">
@@ -56,7 +66,7 @@ export default function Modal({ title, onClose, children, footer, size = "md", d
 
         <div className="px-6 py-4 overflow-y-auto">{children}</div>
 
-        {footer && <div className="flex justify-end gap-2 px-6 py-4 border-t border-gray-100 bg-gray-50/70 rounded-b-2xl">{footer}</div>}
+        {footer && <div ref={footerRef} className="flex justify-end gap-2 px-6 py-4 border-t border-gray-100 bg-gray-50/70 rounded-b-2xl">{footer}</div>}
       </div>
     </div>
   )

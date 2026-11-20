@@ -5,6 +5,7 @@ import toast from "react-hot-toast";
 import { AuthContext } from "../context/AuthContext";
 import { Copy, Trash2, Wand2 } from "lucide-react";
 import WebhookLogs from "../components/WebhookLogs";
+import { submitOnEnter } from "../utils/keys"
 
 const EVENT_OPTIONS = ["checkout.created", "payment.success"];
 const MIN_SECRET_LENGTH =16;
@@ -215,7 +216,7 @@ export default function Webhooks () {
                 </div>
             )}
 
-            <div className="bg-white border rounded-lg p-6 mb-6">
+            <div className="bg-white border rounded-lg p-6 mb-6" onKeyDown={submitOnEnter(createWebhook, creating)}>
                 <h2 className="font-semibold mb-3 text-sm text-gray-600">Add webhook</h2>
                 <div className="space-y-3">
                     <input type="text" className="w-full p-2 border rounded" placeholder="https://example.com/webhook" value={url} onChange={(e)=>setUrl(e.target.value)} />

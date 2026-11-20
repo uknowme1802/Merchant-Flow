@@ -33,6 +33,8 @@ const toRow = ({ order: o, callback }, { forMerchant = false } = {}) => {
             : undefined,
         callback: callbackView(callback),
         paidAt: o.paidAt,
+        refundedPaise: o.refundedPaise ?? 0,
+        refundedAt: o.refundedAt ?? null,
         createdAt: o.createdAt,
         updatedAt: o.updatedAt
     };

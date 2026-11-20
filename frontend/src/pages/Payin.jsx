@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react"
 import toast from "react-hot-toast"
-import { CircleX, Hash, IndianRupee, RefreshCw, Send } from "lucide-react"
+import { CircleX, Hash, IndianRupee, RefreshCw, Send, Undo2 } from "lucide-react"
 import API from "../services/api"
 import Card from "../components/ui/Card"
 import Field from "../components/ui/Field"
@@ -30,7 +30,7 @@ const toParams = (f) => ({
   to: f.to ? dayEnd(f.to) : undefined
 })
 
-const STATUS_CHIPS = [["success", "Success"], ["pending", "Pending"], ["failed", "Failed"]]
+const STATUS_CHIPS = [["success", "Success"], ["pending", "Pending"], ["failed", "Failed"], ["refunded", "Refunded"]]
 
 const Stat = ({ label, value }) => (
   <div className="rounded-xl bg-gray-50 px-4 py-3 ring-1 ring-gray-900/5">
@@ -48,17 +48,20 @@ const resendMessage = (cb) => {
 
 // One dialog for the three actions that need a typed value and a reason.
 function ActionModal({ order, action, onClose, onDone }) {
-  const [value, setValue] = useState(action === "amount" ? rupeesInput(order.amountPaise) : action === "utr" ? order.utr || "" : "")
+  const left = order.amountPaise - (order.refundedPaise || 0) // what a refund can still take
+  const [value, setValue] = useState(action === "amount" ? rupeesInput(order.amountPaise) : action === "refund" ? rupeesInput(left) : action === "utr" ? order.utr || "" : "")
   const [reason, setReason] = useState("")
   const [errors, setErrors] = useState({})
   const [busy, setBusy] = useState(false)
 
-  const TITLES = { amount: "Update amount", utr: "Update UTR", fail: "Fail order" }
+  const TITLES = { amount: "Update amount", utr: "Update UTR", fail: "Fail order", refund: "Refund order" }
 
   const submit = async () => {
     const found = {}
     if (action === "amount" && (!isMoneyText(value) || Number(value) <= 0)) found.value = "An amount in rupees above zero, with at most 2 decimals"
     if (action === "amount" && !found.value && paiseFromInput(value) === order.amountPaise) found.value = "That is already the amount"
+    if (action === "refund" && (!isMoneyText(value) || Number(value) <= 0)) found.value = "An amount in rupees above zero, with at most 2 decimals"
+    if (action === "refund" && !found.value && paiseFromInput(value) > left) found.value = `At most ${rupees(left)} is left to refund`
     if (action === "utr" && !/^\d{12}$/.test(value)) found.value = "The 12-digit bank reference number"
     if (action === "utr" && value === order.utr) found.value = "That is already the UTR"
     if (reason.trim().length < 3) found.reason = "Give a reason (at least 3 characters)"
@@ -71,7 +74,8 @@ function ActionModal({ order, action, onClose, onDone }) {
       if (action === "amount") await API.patch(`${base}/amount`, { amountPaise: paiseFromInput(value), reason: reason.trim() })
       if (action === "utr") await API.patch(`${base}/utr`, { utr: value, reason: reason.trim() })
       if (action === "fail") await API.post(`${base}/fail`, { reason: reason.trim() })
-      toast.success(action === "fail" ? "Order failed" : action === "amount" ? "Amount updated" : "UTR updated")
+      if (action === "refund") await API.post(`${base}/refund`, { amountPaise: paiseFromInput(value), reason: reason.trim() })
+      toast.success(action === "fail" ? "Order failed" : action === "refund" ? (paiseFromInput(value) === left ? "Order refunded in full" : "Part refunded") : action === "amount" ? "Amount updated" : "UTR updated")
       onDone()
     } catch (e) {
       if (e.response?.status === 403) return // the shared handler already told the user
@@ -88,8 +92,8 @@ function ActionModal({ order, action, onClose, onDone }) {
       footer={
         <>
           <button type="button" onClick={onClose} className={buttonClass.ghost}>Cancel</button>
-          <button type="button" onClick={submit} disabled={busy} className={buttonClass[action === "fail" ? "danger" : "primary"]}>
-            {action === "fail" ? "Fail order" : "Save"}
+          <button type="button" onClick={submit} disabled={busy} className={buttonClass[action === "fail" || action === "refund" ? "danger" : "primary"]}>
+            {action === "fail" ? "Fail order" : action === "refund" ? "Refund" : "Save"}
           </button>
         </>
       }>
@@ -97,6 +101,9 @@ function ActionModal({ order, action, onClose, onDone }) {
         <dt className="text-gray-500">TXN ID</dt><dd className="col-span-2"><code>{order.orderId}</code></dd>
         <dt className="text-gray-500">Merchant</dt><dd className="col-span-2">{order.merchant?.businessName} <span className="text-gray-500">({order.merchant?.mid})</span></dd>
         <dt className="text-gray-500">Amount</dt><dd className="col-span-2">{rupees(order.amountPaise)}</dd>
+        {order.refundedPaise > 0 && (
+          <><dt className="text-gray-500">Refunded</dt><dd className="col-span-2">{rupees(order.refundedPaise)} <span className="text-gray-500">({rupees(left)} left)</span></dd></>
+        )}
         <dt className="text-gray-500">Status</dt><dd className="col-span-2"><StatusBadge value={order.status} /></dd>
       </dl>
 
@@ -113,9 +120,19 @@ function ActionModal({ order, action, onClose, onDone }) {
               onChange={(e) => setValue(e.target.value.replace(/\D/g, "").slice(0, 12))} />
           </Field>
         )}
+        {action === "refund" && (
+          <Field label="Amount to refund (₹)" error={errors.value} hint={`Up to ${rupees(left)}. The fee and payable are worked out again on what is left.`}>
+            <input className={inputClass} inputMode="decimal" autoComplete="off" value={value} onChange={(e) => setValue(e.target.value)} />
+          </Field>
+        )}
         {action === "fail" && (
           <p className="rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700 ring-1 ring-red-600/10">
-            This cannot be undone. The merchant is sent a failed callback. Money that already arrived is not returned by this.
+            This cannot be undone. The merchant is sent a failed callback.{order.status === "success" && ` The whole amount is refunded too${order.refundedPaise > 0 ? ` (${rupees(left)} not yet refunded)` : ""}. This is a simulation: no money moves.`}
+          </p>
+        )}
+        {action === "refund" && (
+          <p className="rounded-xl bg-violet-50 px-4 py-3 text-sm text-violet-700 ring-1 ring-violet-600/10">
+            This is a simulation: no money moves. A refund cannot be undone, and the merchant is sent a refunded callback each time. Once all of the order is refunded it is final.
           </p>
         )}
         <Field label="Reason" error={errors.reason} hint="Kept in the audit log with who made the change. The merchant does not see it.">
@@ -179,8 +196,9 @@ export default function Payin() {
   const menuFor = (o) => [
     { label: "Resend Callback", icon: Send, onClick: () => resend(o), disabled: o.status === "pending" || resending === o.orderId, hint: "Nothing to send while the order is pending" },
     { label: "Update UTR", icon: Hash, onClick: () => setAction({ order: o, kind: "utr" }), disabled: o.status !== "success", hint: "Only for a successful order" },
-    { label: "Update Amount", icon: IndianRupee, onClick: () => setAction({ order: o, kind: "amount" }), disabled: o.status === "failed", hint: "Not possible for a failed order" },
-    { label: "Fail Order", icon: CircleX, tone: "danger", onClick: () => setAction({ order: o, kind: "fail" }), disabled: o.status === "failed", hint: "The order already failed" }
+    { label: "Update Amount", icon: IndianRupee, onClick: () => setAction({ order: o, kind: "amount" }), disabled: o.status === "failed" || o.status === "refunded" || o.refundedPaise > 0, hint: "Not possible for a failed, refunded or partly refunded order" },
+    { label: "Refund", icon: Undo2, onClick: () => setAction({ order: o, kind: "refund" }), disabled: o.status !== "success", hint: "Only a successful order with something left can be refunded" },
+    { label: "Fail Order", icon: CircleX, tone: "danger", onClick: () => setAction({ order: o, kind: "fail" }), disabled: o.status === "failed" || o.status === "refunded", hint: "The order is already final" }
   ]
 
   const totals = result.totals
@@ -203,9 +221,10 @@ export default function Payin() {
 
       {totals && (
         <Card>
-          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
             <Stat label="Total transactions" value={totals.count} />
             <Stat label="Total payment amount" value={rupees(totals.amountPaise)} />
+            <Stat label="Total refunded" value={rupees(totals.refundedPaise)} />
             <Stat label="Total payable amount" value={rupees(totals.payablePaise)} />
             <Stat label="Total PG fees" value={rupees(totals.feePaise)} />
           </div>
@@ -239,7 +258,7 @@ export default function Payin() {
           <div className="grid grid-cols-2 gap-3">
             <Field label="Status">
               <select className={inputClass} value={draft.status} onChange={set("status")}>
-                <option value="">All</option><option value="success">Success</option><option value="pending">Pending</option><option value="failed">Failed</option>
+                <option value="">All</option><option value="success">Success</option><option value="pending">Pending</option><option value="failed">Failed</option><option value="refunded">Refunded</option>
               </select>
             </Field>
             <Field label="Mode">
@@ -293,7 +312,10 @@ export default function Payin() {
                   </td>
                   <td className="pr-4 whitespace-nowrap">{formatIST(o.createdAt)}</td>
                   <td className="pr-4 whitespace-nowrap">{formatIST(o.updatedAt)}</td>
-                  <td className="pr-4 text-right whitespace-nowrap font-medium">{rupees(o.amountPaise)}</td>
+                  <td className="pr-4 text-right whitespace-nowrap font-medium">
+                    {rupees(o.amountPaise)}
+                    {o.refundedPaise > 0 && <span className="block text-xs font-normal text-violet-700">Refunded {rupees(o.refundedPaise)}</span>}
+                  </td>
                   <td className="pr-4 text-right whitespace-nowrap">{rupees(o.feePaise)}</td>
                   <td className="pr-4 text-right whitespace-nowrap">{rupees(o.payablePaise)}</td>
                   <td className="pr-4 whitespace-nowrap"><StatusBadge value={o.status} /></td>

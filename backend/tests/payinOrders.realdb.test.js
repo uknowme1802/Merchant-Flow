@@ -189,13 +189,15 @@ describe("GET /api/payin/orders", () => {
         expect(res.body.totals).toEqual({
             count: 4,
             amountPaise: 190000,
+            refundedPaise: 0,
             // fee and payable only count successful orders: 2500 + 500 and 97500 + 19500
             feePaise: 3000,
             payablePaise: 117000,
             byStatus: {
                 success: { count: 2, amountPaise: 120000 },
                 pending: { count: 1, amountPaise: 30000 },
-                failed: { count: 1, amountPaise: 40000 }
+                failed: { count: 1, amountPaise: 40000 },
+                refunded: { count: 0, amountPaise: 0 }
             }
         });
 
@@ -446,15 +448,34 @@ describe("POST /api/payin/orders/:orderId/fail", () => {
         expect(entry.metadata).toMatchObject({ orderId: order.orderId, from: "pending", reason: "customer called, fraud suspected" });
     });
 
-    it("fails a successful order and leaves the bank credit alone", async () => {
+    it("fails a successful order, refunds all of it, and leaves the bank credit alone", async () => {
         const { merchant, bank } = await setup();
         const order = await makeOrder(merchant, bank, { amountPaise: 50000 });
         const credit = await makeCredit(bank, 50000);
         expect((await claimPayment(order, credit.utr)).result).toBe(CLAIM.SUCCESS);
 
         const res = await asAdmin("post", `/api/payin/orders/${order.orderId}/fail`).send({ reason: "chargeback" });
-        expect(res.body.order.status).toBe("failed");
+        expect(res.body.order).toMatchObject({ status: "failed", refundedPaise: 50000, feePaise: 0, payablePaise: 0 });
+        expect((await Order.findById(order._id)).refundedAt).toBeInstanceOf(Date);
         expect((await BankCredit.findById(credit._id)).claimedBy).toEqual(order._id);
+
+        // One failed callback that says how much was refunded; no separate refunded callback.
+        const deliveries = await CallbackDelivery.find({ orderId: order._id });
+        expect(deliveries.map((d) => d.event)).toEqual(["order.failed"]);
+        expect(JSON.parse(deliveries[0].body).data).toMatchObject({ status: "failed", amountPaise: 50000, refundedPaise: 50000 });
+
+        const entry = await AuditLog.findOne({ action: "order.failed_by_staff" });
+        expect(entry.metadata).toMatchObject({ from: "success", refundedNowPaise: 50000, refundedTotalPaise: 50000 });
+        expect((await asAdmin("get", "/api/payin/orders")).body.totals.refundedPaise).toBe(50000);
+    });
+
+    it("failing a pending order returns nothing, because no money arrived", async () => {
+        const { merchant, bank } = await setup();
+        const order = await makeOrder(merchant, bank);
+
+        const res = await asAdmin("post", `/api/payin/orders/${order.orderId}/fail`).send({ reason: "test one" });
+        expect(res.body.order).toMatchObject({ status: "failed", refundedPaise: 0 });
+        expect((await Order.findById(order._id)).refundedAt).toBeNull();
     });
 
     it("cannot be done twice, needs a reason, and does nothing to an order that already failed", async () => {
@@ -476,5 +497,148 @@ describe("POST /api/payin/orders/:orderId/fail", () => {
         const res = await asAdmin("post", `/api/payin/orders/${order.orderId}/fail`).send({ reason: "test" });
         expect(res.statusCode).toBe(409);
         expect((await Order.findById(order._id)).statusReason).toBe("expired");
+    });
+});
+
+describe("POST /api/payin/orders/:orderId/refund", () => {
+    const refund = (order, who = asAdmin) => who("post", `/api/payin/orders/${order.orderId}/refund`);
+
+    it("refunds part of a successful order: it stays success, the fee and payable follow what is left, and the merchant is told", async () => {
+        const { merchant, bank } = await setup();
+        const order = await makeOrder(merchant, bank, { status: "success", amountPaise: 50000 });
+
+        const res = await refund(order, asAgent).send({ amountPaise: 20000, reason: "customer returned one item" });
+        expect(res.statusCode).toBe(200);
+        // 30000 left at 2.50%: fee 750, payable 29250
+        expect(res.body.order).toMatchObject({ status: "success", amountPaise: 50000, refundedPaise: 20000, feePaise: 750, payablePaise: 29250 });
+        expect((await Order.findById(order._id)).refundedAt).toBeInstanceOf(Date);
+
+        const delivery = await CallbackDelivery.findOne({ orderId: order._id, event: "order.refunded" });
+        expect(delivery.body).not.toContain("item");
+        expect(JSON.parse(delivery.body).data).toMatchObject({ status: "success", amountPaise: 50000, refundedPaise: 20000 });
+
+        const entry = await AuditLog.findOne({ action: "order.refunded_by_staff" });
+        expect(entry).toMatchObject({ actorType: "agent" });
+        expect(entry.metadata).toMatchObject({
+            orderId: order.orderId, from: "success", to: "success", amountPaise: 20000, refundedTotalPaise: 20000, reason: "customer returned one item"
+        });
+    });
+
+    it("can be done again until nothing is left, then the order becomes refunded and final", async () => {
+        const { merchant, bank } = await setup();
+        const order = await makeOrder(merchant, bank, { status: "success", amountPaise: 50000 });
+
+        expect((await refund(order).send({ amountPaise: 20000, reason: "first part" })).statusCode).toBe(200);
+        const rest = await refund(order).send({ amountPaise: 30000, reason: "the rest" });
+        expect(rest.statusCode).toBe(200);
+        expect(rest.body.order).toMatchObject({ status: "refunded", statusReason: "refunded_by_staff", refundedPaise: 50000, feePaise: 0, payablePaise: 0 });
+
+        // The one callback row was sent again with the new state, not duplicated.
+        const deliveries = await CallbackDelivery.find({ orderId: order._id, event: "order.refunded" });
+        expect(deliveries).toHaveLength(1);
+        expect(JSON.parse(deliveries[0].body).data).toMatchObject({ status: "refunded", refundedPaise: 50000, statusReason: "refunded_by_staff" });
+        expect(deliveries[0].status).toBe("pending");
+        expect(await AuditLog.countDocuments({ action: "order.refunded_by_staff" })).toBe(2);
+
+        expect((await refund(order).send({ amountPaise: 100, reason: "too late" })).statusCode).toBe(409);
+    });
+
+    it("refuses more than what is left, a missing or non-integer amount, a missing reason, and orders that are not successful", async () => {
+        const { merchant, bank } = await setup();
+        const pending = await makeOrder(merchant, bank);
+        const failed = await makeOrder(merchant, bank, { status: "failed" });
+        const done = await makeOrder(merchant, bank, { status: "success", amountPaise: 50000 });
+
+        expect((await refund(pending).send({ amountPaise: 100, reason: "test one" })).statusCode).toBe(409);
+        expect((await refund(failed).send({ amountPaise: 100, reason: "test one" })).statusCode).toBe(409);
+        expect((await refund(done).send({ reason: "test one" })).statusCode).toBe(400);
+        expect((await refund(done).send({ amountPaise: 0, reason: "test one" })).statusCode).toBe(400);
+        expect((await refund(done).send({ amountPaise: 99.5, reason: "test one" })).statusCode).toBe(400);
+        expect((await refund(done).send({ amountPaise: "100", reason: "test one" })).statusCode).toBe(400);
+        expect((await refund(done).send({ amountPaise: 100 })).statusCode).toBe(400);
+
+        const tooMuch = await refund(done).send({ amountPaise: 50001, reason: "test one" });
+        expect(tooMuch.statusCode).toBe(422);
+        expect(tooMuch.body.code).toBe("REFUND_EXCEEDS_REMAINING");
+        expect((await refund(done).send({ amountPaise: 30000, reason: "test one" })).statusCode).toBe(200);
+        expect((await refund(done).send({ amountPaise: 20001, reason: "test two" })).statusCode).toBe(422);
+        expect((await Order.findById(done._id)).refundedPaise).toBe(30000);
+    });
+
+    it("two refunds sent at once cannot refund more than the amount", async () => {
+        const { merchant, bank } = await setup();
+        const order = await makeOrder(merchant, bank, { status: "success", amountPaise: 50000 });
+
+        const results = await Promise.all([
+            refund(order).send({ amountPaise: 30000, reason: "test one" }),
+            refund(order).send({ amountPaise: 30000, reason: "test two" })
+        ]);
+        // One wins. The other is refused: 409 if it lost the race, 422 if it saw the new total.
+        const codes = results.map((r) => r.statusCode).sort();
+        expect(codes[0]).toBe(200);
+        expect([409, 422]).toContain(codes[1]);
+        expect((await Order.findById(order._id)).refundedPaise).toBe(30000);
+    });
+
+    it("a partly refunded order can no longer have its amount changed, and the dashboard counts only what is left", async () => {
+        const { merchant, bank } = await setup();
+        const order = await makeOrder(merchant, bank, { status: "success", amountPaise: 50000 });
+        expect((await asAdmin("get", "/api/payin/dashboard")).body.cards).toMatchObject({ totalPayinPaise: 50000, payinChargesPaise: 1250, unsettledPaise: 48750 });
+
+        await refund(order).send({ amountPaise: 20000, reason: "test one" });
+
+        expect((await asAdmin("patch", `/api/payin/orders/${order.orderId}/amount`).send({ amountPaise: 40000, reason: "test two" })).statusCode).toBe(409);
+        const c = (await asAdmin("get", "/api/payin/dashboard")).body.cards;
+        expect(c).toMatchObject({ totalPayinPaise: 30000, payinChargesPaise: 750, unsettledPaise: 29250 });
+        expect(c.totalPayinPaise).toBe(c.payinChargesPaise + c.unsettledPaise + c.toBeSettledPaise + c.settledPaise);
+
+        await refund(order).send({ amountPaise: 30000, reason: "test three" });
+        expect((await asAdmin("get", "/api/payin/dashboard")).body.cards.totalPayinPaise).toBe(0);
+    });
+
+    it("failing a partly refunded order refunds the rest of it", async () => {
+        const { merchant, bank } = await setup();
+        const order = await makeOrder(merchant, bank, { status: "success", amountPaise: 50000 });
+        await refund(order).send({ amountPaise: 20000, reason: "test one" });
+
+        const res = await asAdmin("post", `/api/payin/orders/${order.orderId}/fail`).send({ reason: "test two" });
+        expect(res.statusCode).toBe(200);
+        expect(res.body.order).toMatchObject({ status: "failed", refundedPaise: 50000, feePaise: 0, payablePaise: 0 });
+        const entry = await AuditLog.findOne({ action: "order.failed_by_staff" });
+        expect(entry.metadata).toMatchObject({ refundedNowPaise: 30000, refundedTotalPaise: 50000 });
+        expect((await asAdmin("get", "/api/payin/dashboard")).body.cards.totalPayinPaise).toBe(0);
+    });
+
+    it("counts an order with no stored rate as fee 0 when part of it is refunded", async () => {
+        const { merchant, bank } = await setup();
+        const order = await makeOrderOn(merchant, bank, { status: "success", utr: nextUtr(), paidAt: new Date(), amountPaise: 10000 });
+
+        const res = await refund(order).send({ amountPaise: 4000, reason: "test one" });
+        expect(res.statusCode).toBe(200);
+        expect(res.body.order).toMatchObject({ status: "success", refundedPaise: 4000, feePaise: null, payablePaise: null });
+        const c = (await asAdmin("get", "/api/payin/dashboard")).body.cards;
+        expect(c).toMatchObject({ totalPayinPaise: 6000, payinChargesPaise: 0, unsettledPaise: 6000 });
+    });
+
+    it("shows the refunded total, fully refunded orders and the status filter in the list", async () => {
+        const { merchant, bank } = await setup();
+        const full = await makeOrder(merchant, bank, { status: "success", amountPaise: 50000 });
+        const part = await makeOrder(merchant, bank, { status: "success", amountPaise: 20000 });
+        await refund(full).send({ amountPaise: 50000, reason: "test one" });
+        await refund(part).send({ amountPaise: 5000, reason: "test two" });
+
+        expect((await asAdmin("get", "/api/payin/orders?status=refunded")).body.total).toBe(1);
+        const all = await asAdmin("get", "/api/payin/orders");
+        expect(all.body.totals.refundedPaise).toBe(55000);
+        expect(all.body.totals.byStatus.refunded).toEqual({ count: 1, amountPaise: 50000 });
+        expect(all.body.totals.byStatus.success).toEqual({ count: 1, amountPaise: 20000 });
+        const row = all.body.data.find((r) => r.orderId === part.orderId);
+        expect(row).toMatchObject({ status: "success", refundedPaise: 5000 });
+    });
+
+    it("is closed to people who are not logged in", async () => {
+        const { merchant, bank } = await setup();
+        const order = await makeOrder(merchant, bank, { status: "success" });
+        expect((await request(app).post(`/api/payin/orders/${order.orderId}/refund`).send({ amountPaise: 100, reason: "test one" })).statusCode).toBe(401);
     });
 });

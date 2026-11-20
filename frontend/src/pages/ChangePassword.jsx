@@ -6,6 +6,7 @@ import API from "../services/api"
 import { AuthContext } from "../context/AuthContext"
 import Button from "../components/ui/Button"
 import { errorMessage } from "../utils/format"
+import { submitOnEnter } from "../utils/keys"
 
 // Change your own password. After an admin issues a temporary password this page is forced:
 // every other screen sends the user back here until a new password is chosen.
@@ -54,7 +55,7 @@ export default function ChangePassword() {
 
   return (
     <div className="flex items-center justify-center h-screen bg-gradient-to-r from-indigo-500 to-purple-600">
-      <div className="bg-white p-10 rounded-xl shadow-xl w-96">
+      <div className="bg-white p-10 rounded-xl shadow-xl w-96" onKeyDown={submitOnEnter(submit, busy)}>
         <h2 className="text-2xl font-bold mb-2 text-center">Change password</h2>
         <p className="text-sm text-gray-500 mb-6 text-center">
           {forced

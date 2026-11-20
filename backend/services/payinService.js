@@ -5,8 +5,8 @@ const CallbackDelivery = require("../models/CallbackDelivery");
 const ApiError = require("../utils/ApiError");
 const { computeFee } = require("../utils/fees");
 const { expireIfDue } = require("./orderService");
-const { enqueueOrderCallback, resendOrderCallback } = require("./callbackService");
-const { STAFF_FAIL_REASON } = require("../constants/order");
+const { enqueueOrderCallback, enqueueRefundCallback, resendOrderCallback } = require("./callbackService");
+const { STAFF_FAIL_REASON, STAFF_REFUND_REASON } = require("../constants/order");
 
 // The Payin tab: every order, with totals, and the support actions on a single order. Admins and
 // agents use it; merchants have their own screens. Every action is a conditional update that names
@@ -47,6 +47,7 @@ const computeTotals = async (filter) => {
                 _id: "$status",
                 count: { $sum: 1 },
                 amountPaise: { $sum: "$amountPaise" },
+                refundedPaise: { $sum: { $ifNull: ["$refundedPaise", 0] } },
                 feePaise: { $sum: { $cond: [{ $eq: ["$status", "success"] }, { $ifNull: ["$feePaise", 0] }, 0] } },
                 payablePaise: { $sum: { $cond: [{ $eq: ["$status", "success"] }, { $ifNull: ["$payablePaise", 0] }, 0] } }
             }
@@ -56,12 +57,14 @@ const computeTotals = async (filter) => {
     const byStatus = {
         success: { count: 0, amountPaise: 0 },
         pending: { count: 0, amountPaise: 0 },
-        failed: { count: 0, amountPaise: 0 }
+        failed: { count: 0, amountPaise: 0 },
+        refunded: { count: 0, amountPaise: 0 }
     };
-    const totals = { count: 0, amountPaise: 0, feePaise: 0, payablePaise: 0, byStatus };
+    const totals = { count: 0, amountPaise: 0, refundedPaise: 0, feePaise: 0, payablePaise: 0, byStatus };
     for (const r of rows) {
         totals.count += r.count;
         totals.amountPaise += r.amountPaise;
+        totals.refundedPaise += r.refundedPaise;
         totals.feePaise += r.feePaise;
         totals.payablePaise += r.payablePaise;
         if (byStatus[r._id]) byStatus[r._id] = { count: r.count, amountPaise: r.amountPaise };
@@ -93,7 +96,7 @@ const listOrders = async (query, scope = null) => {
     return { data: orders.map((o) => ({ order: o, callback: latest.get(String(o._id)) || null })), total, totals, page, limit };
 };
 
-// The nine dashboard cards, over successful orders in each merchant's CURRENT mode (sandbox rows stop
+// The nine dashboard cards, over successful orders (net of refunds) in each merchant's CURRENT mode (sandbox rows stop
 // counting once a merchant goes to production). Settlement and payouts do not exist yet, so until
 // they do every successful order is "unsettled" and the payout cards are zero. An order from before
 // rates were stored has no fee, so it counts as fee 0 and payable = amount. That keeps the check
@@ -116,9 +119,10 @@ const dashboardCards = async ({ merchant: mid } = {}) => {
             $group: {
                 _id: null,
                 count: { $sum: 1 },
-                amountPaise: { $sum: "$amountPaise" },
+                // What is left after refunds: the amount minus what staff have returned.
+                amountPaise: { $sum: { $subtract: ["$amountPaise", { $ifNull: ["$refundedPaise", 0] }] } },
                 feePaise: { $sum: { $ifNull: ["$feePaise", 0] } },
-                payablePaise: { $sum: { $ifNull: ["$payablePaise", "$amountPaise"] } }
+                payablePaise: { $sum: { $ifNull: ["$payablePaise", { $subtract: ["$amountPaise", { $ifNull: ["$refundedPaise", 0] }] }] } }
             }
         }
     ]);
@@ -180,6 +184,9 @@ const changedMeanwhile = () =>
 const updateAmount = async (orderId, amountPaise) => {
     const order = await loadOrder(orderId);
     assertEditable(order, ["pending", "success"], "Changing the amount");
+    if (order.refundedPaise > 0) {
+        throw new ApiError(409, "This order has been partly refunded, so its amount can no longer change", "ORDER_STATE_CONFLICT");
+    }
     if (amountPaise === order.amountPaise) throw new ApiError(400, "The amount is already that value");
 
     const merchant = await Merchant.findById(order.merchantId).select("config");
@@ -219,18 +226,56 @@ const updateUtr = async (orderId, utr) => {
 };
 
 // Fail a pending or successful order for good. The merchant is told with a failed callback (when
-// auto-trigger is on). Money that arrived is not touched: that is a refund, a later step.
+// auto-trigger is on). Failing a successful order also refunds all of it (see below).
 const failOrder = async (orderId) => {
     const order = await loadOrder(orderId);
     assertEditable(order, ["pending", "success"], "Failing the order");
 
+    // Failing a successful order returns ALL of its money (a simulation): whatever was not yet refunded
+    // is refunded now, the fee and payable go to zero, and the merchant gets one failed callback that
+    // carries the refunded amount. A pending order has no money to return.
+    const before = order.refundedPaise || 0;
+    const set = { status: "failed", statusReason: STAFF_FAIL_REASON };
+    if (order.status === "success") {
+        Object.assign(set, { refundedPaise: order.amountPaise, refundedAt: new Date(), ...computeFee(0, order.payinBps) });
+    }
     const updated = await Order.findOneAndUpdate(
-        { _id: order._id, status: order.status },
-        { $set: { status: "failed", statusReason: STAFF_FAIL_REASON } },
+        { _id: order._id, status: order.status, refundedPaise: before === 0 ? { $in: [0, null] } : before },
+        { $set: set },
         { returnDocument: "after" }
     );
     if (!updated) throw changedMeanwhile();
     await enqueueOrderCallback(updated);
+    return { before: order, after: updated };
+};
+
+// Refund part or all of a successful order (a simulation: no money moves). It can be done more than
+// once; the order stays success while something is left, and becomes refunded (final) when the total
+// returned reaches the amount. The fee and payable are worked out again on what is left, from the
+// rate stored on the order, so the dashboard cards stay net of refunds. The merchant is told with an
+// `order.refunded` callback each time (when auto-trigger is on). Once settlement exists, a refund
+// after settlement becomes a deduction on the next settlement.
+const refundOrder = async (orderId, amountPaise) => {
+    const order = await loadOrder(orderId);
+    assertEditable(order, ["success"], "Refunding");
+
+    const before = order.refundedPaise || 0;
+    const left = order.amountPaise - before;
+    if (amountPaise > left) {
+        throw new ApiError(422, `Only ${(left / 100).toFixed(2)} rupees are left to refund on this order`, "REFUND_EXCEEDS_REMAINING");
+    }
+
+    const total = before + amountPaise;
+    const set = { refundedPaise: total, refundedAt: new Date(), ...computeFee(order.amountPaise - total, order.payinBps) };
+    if (total === order.amountPaise) Object.assign(set, { status: "refunded", statusReason: STAFF_REFUND_REASON });
+
+    // The refunded total we read must still be there, so two staff refunding at once cannot both win.
+    const updated = await Order.findOneAndUpdate(
+        { _id: order._id, status: "success", refundedPaise: before === 0 ? { $in: [0, null] } : before },
+        { $set: set }, { returnDocument: "after" }
+    );
+    if (!updated) throw changedMeanwhile();
+    await enqueueRefundCallback(updated);
     return { before: order, after: updated };
 };
 
@@ -241,4 +286,4 @@ const resendCallbackForOrder = async (orderId, scope = null) => {
     return { order, delivery };
 };
 
-module.exports = { listOrders, dashboardCards, filterOptions, updateAmount, updateUtr, failOrder, resendCallbackForOrder };
+module.exports = { listOrders, dashboardCards, filterOptions, updateAmount, updateUtr, failOrder, refundOrder, resendCallbackForOrder };

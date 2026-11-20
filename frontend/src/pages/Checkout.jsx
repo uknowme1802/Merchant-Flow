@@ -3,6 +3,7 @@ import API from "../services/api";
 import Button from "../components/ui/Button";
 import toast from "react-hot-toast";
 import { CheckCircle2 } from "lucide-react";
+import { isEnterInTextBox, submitOnEnter } from "../utils/keys"
 
 export default function Checkout() {
     const [step, setStep] = useState("amount");
@@ -88,7 +89,7 @@ export default function Checkout() {
             <h1 className="text-xl font-bold mb-4 text-center">Checkout</h1>
             <div className="bg-white border rounded-lg p-6 shadow-sm">
                 {step === "amount" && (
-                    <div className="space-y-3">
+                    <div className="space-y-3" onKeyDown={(e) => { if (isEnterInTextBox(e)) { e.preventDefault(); startCheckout() } }}>
                         <p className="text-sm text-gray-600">
                             Enter the amount to pay
                         </p>
@@ -117,7 +118,7 @@ export default function Checkout() {
                         )}
 
                         {paidClicked && (
-                            <div className="space-y-3">
+                            <div className="space-y-3" onKeyDown={submitOnEnter(submitUtr, verifying)}>
                                 <input type="text" className="w-full p-2 border rounded text-center tracking-widest" placeholder="Enter 12-digit UTR" inputMode="numeric"
                                 value={utr}
                                 onChange={handleUtrChange}

@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router-dom"
 import toast from "react-hot-toast"
 import API from "../services/api"
 import Button from "../components/ui/Button"
+import { submitOnEnter } from "../utils/keys"
 
 const empty = {
   businessName: "", businessType: "company", website: "", country: "IN",
@@ -42,7 +43,7 @@ export default function MerchantSignup() {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-r from-indigo-500 to-purple-600 p-6">
-      <div className="bg-white p-8 rounded-xl shadow-xl w-full max-w-2xl">
+      <div className="bg-white p-8 rounded-xl shadow-xl w-full max-w-2xl" onKeyDown={submitOnEnter(submit, busy)}>
         <h2 className="text-2xl font-bold mb-1">Become a merchant</h2>
         <p className="text-sm text-gray-500 mb-6">
           Sandbox access is instant. Live access starts once an admin approves your details (simulated KYC).

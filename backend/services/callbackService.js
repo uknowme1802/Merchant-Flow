@@ -23,6 +23,9 @@ const signingSecret = async (mid, mode) => {
     return decrypt(cred.secretEnc, `${cred.mid}:${cred.environment}`);
 };
 
+// The callback event that tells the merchant about an order's final state.
+const eventFor = (status) => (status === "success" ? "order.success" : status === "refunded" ? "order.refunded" : "order.failed");
+
 const buildBody = (event, order) => JSON.stringify({
     event,
     data: {
@@ -34,6 +37,8 @@ const buildBody = (event, order) => JSON.stringify({
         currency: order.currency,
         utr: order.utr,
         paidAt: order.paidAt,
+        refundedPaise: order.refundedPaise ?? 0,
+        refundedAt: order.refundedAt ?? null,
         mode: order.mode
     },
     timestamp: new Date().toISOString()
@@ -99,7 +104,7 @@ const enqueueOrderCallback = async (order) => {
         // An order from the other mode must never call the current mode's URL.
         if (merchant.mode !== order.mode) return null;
 
-        const event = order.status === "success" ? "order.success" : "order.failed";
+        const event = eventFor(order.status);
         const delivery = await CallbackDelivery.findOneAndUpdate(
             { orderId: order._id, event },
             {
@@ -163,6 +168,38 @@ const resendCallback = async (deliveryId, scope = {}) => {
     return (await attempt(claimed)) || CallbackDelivery.findById(claimed._id);
 };
 
+// Called after every staff refund, partial or full. A refund can happen more than once on an order,
+// but an order has one callback row per event, so the row is reset to "pending" with the new body
+// (it carries the total refunded so far) and goes out again. Never throws, like enqueueOrderCallback.
+const enqueueRefundCallback = async (order) => {
+    try {
+        const merchant = await Merchant.findById(order.merchantId);
+        if (!merchant || !merchant.config?.callbackUrl || merchant.config.webhookAutoTrigger === false) return null;
+        if (merchant.mode !== order.mode) return null;
+
+        const event = "order.refunded";
+        const delivery = await CallbackDelivery.findOneAndUpdate(
+            { orderId: order._id, event },
+            {
+                $set: {
+                    url: merchant.config.callbackUrl, body: buildBody(event, order), status: "pending", attempts: 0,
+                    nextRetryAt: new Date(), statusCode: null, error: null, deliveredAt: null
+                },
+                $setOnInsert: {
+                    merchantId: merchant._id, orderPublicId: order.orderId, mode: order.mode, event,
+                    maxAttempts: CALLBACK_MAX_ATTEMPTS
+                }
+            },
+            { upsert: true, returnDocument: "after" }
+        );
+        kick();
+        return delivery;
+    } catch (err) {
+        logger.warn("Could not queue a refund callback", { orderId: order.orderId, error: err.message });
+        return null;
+    }
+};
+
 // Resend from the Payin tab: sends the order's CURRENT state now, even when auto-trigger is off. The
 // callback for the order's present result (success or failed) is created if it does not exist yet,
 // its body is rebuilt from the order as it is now (an amount or UTR may have been corrected), and
@@ -179,7 +216,7 @@ const resendOrderCallback = async (order) => {
         throw new ApiError(409, "This order belongs to the merchant's other mode, so it cannot be sent", "ORDER_WRONG_MODE");
     }
 
-    const event = order.status === "success" ? "order.success" : "order.failed";
+    const event = eventFor(order.status);
     let delivery = await CallbackDelivery.findOne({ orderId: order._id, event });
     if (!delivery) {
         try {
@@ -262,6 +299,6 @@ const startCallbackWorker = (beforeTick) => {
 };
 
 module.exports = {
-    enqueueOrderCallback, processDueCallbacks, resendCallback, resendOrderCallback, cancelPendingCallbacks,
+    enqueueOrderCallback, enqueueRefundCallback, processDueCallbacks, resendCallback, resendOrderCallback, cancelPendingCallbacks,
     listCallbacks, getCallback, startCallbackWorker, sign
 };

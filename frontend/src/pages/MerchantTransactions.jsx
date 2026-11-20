@@ -107,14 +107,15 @@ export default function MerchantTransactions() {
 
       {totals && (
         <Card>
-          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
             <Stat label="Total transactions" value={totals.count} />
             <Stat label="Total payment amount" value={rupees(totals.amountPaise)} />
+            <Stat label="Total refunded" value={rupees(totals.refundedPaise)} />
             <Stat label="Total payable amount" value={rupees(totals.payablePaise)} />
             <Stat label="Total PG fees" value={rupees(totals.feePaise)} />
           </div>
           <div className="mt-4 flex flex-wrap gap-x-6 gap-y-2 text-sm">
-            {["success", "pending", "failed"].map((key) => (
+            {["success", "pending", "failed", "refunded"].map((key) => (
               <span key={key} className="inline-flex items-center gap-2">
                 <StatusBadge value={key} />
                 <span className="text-gray-700">{totals.byStatus[key].count} · {rupees(totals.byStatus[key].amountPaise)}</span>
@@ -129,7 +130,7 @@ export default function MerchantTransactions() {
           <Field label="Search" hint="Transaction ID, your order ID or UTR"><input className={inputClass} value={draft.search} onChange={set("search")} autoComplete="off" /></Field>
           <Field label="Status">
             <select className={inputClass} value={draft.status} onChange={set("status")}>
-              <option value="">All</option><option value="success">Success</option><option value="pending">Pending</option><option value="failed">Failed</option>
+              <option value="">All</option><option value="success">Success</option><option value="pending">Pending</option><option value="failed">Failed</option><option value="refunded">Refunded</option>
             </select>
           </Field>
           <Field label="From" error={rangeInvalid ? "The start date is after the end date" : undefined}>
@@ -171,7 +172,10 @@ export default function MerchantTransactions() {
                   </td>
                   <td className="pr-4 whitespace-nowrap">{formatIST(o.createdAt)}</td>
                   <td className="pr-4 whitespace-nowrap">{formatIST(o.updatedAt)}</td>
-                  <td className="pr-4 text-right whitespace-nowrap font-medium">{rupees(o.amountPaise)}</td>
+                  <td className="pr-4 text-right whitespace-nowrap font-medium">
+                    {rupees(o.amountPaise)}
+                    {o.refundedPaise > 0 && <span className="block text-xs font-normal text-violet-700">Refunded {rupees(o.refundedPaise)}</span>}
+                  </td>
                   <td className="pr-4 text-right whitespace-nowrap">{rupees(o.feePaise)}</td>
                   <td className="pr-4 text-right whitespace-nowrap">{rupees(o.payablePaise)}</td>
                   <td className="pr-4 whitespace-nowrap"><StatusBadge value={o.status} /></td>
