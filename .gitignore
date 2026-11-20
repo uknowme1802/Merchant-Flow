@@ -9,3 +9,7 @@ resume
 .vscode
 webhook-logs-fix.patch
 /docs/
+
+# Local planning notes and the Atlas monitoring compose file
+MerchantFlow Phase Plan*.md
+docker-compose.atlas-monitoring.yml

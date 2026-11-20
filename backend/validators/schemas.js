@@ -283,6 +283,10 @@ module.exports = {
         limit: Joi.number().integer().min(1).max(100).default(20)
     }),
 
+    payinDashboardQuery: Joi.object({
+        merchant: Joi.string().trim().pattern(/^mid_[a-z0-9]{12}$/).optional()
+    }),
+
     payinUpdateAmount: Joi.object({
         amountPaise: Joi.number().integer().strict().min(1).max(MAX_ORDER_PAISE).required(),
         reason: Joi.string().trim().min(3).max(500).required()

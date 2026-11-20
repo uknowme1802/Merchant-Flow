@@ -90,6 +90,57 @@ const listOrders = async (query) => {
     return { data: orders.map((o) => ({ order: o, callback: latest.get(String(o._id)) || null })), total, totals, page, limit };
 };
 
+// The nine dashboard cards, over successful orders in each merchant's CURRENT mode (sandbox rows stop
+// counting once a merchant goes to production). Settlement and payouts do not exist yet, so until
+// they do every successful order is "unsettled" and the payout cards are zero. An order from before
+// rates were stored has no fee, so it counts as fee 0 and payable = amount. That keeps the check
+// total pay-in = charges + unsettled + to be settled + settled payable true on any data.
+const dashboardCards = async ({ merchant: mid } = {}) => {
+    const match = { status: "success" };
+    let merchant = null;
+    if (mid) {
+        merchant = await Merchant.findOne({ mid }).select("mid businessName mode config");
+        if (!merchant) throw new ApiError(404, "Merchant not found");
+        match.merchantId = merchant._id;
+    }
+
+    const [row] = await Order.aggregate([
+        { $match: match },
+        { $lookup: { from: Merchant.collection.name, localField: "merchantId", foreignField: "_id", as: "m" } },
+        { $unwind: "$m" },
+        { $match: { $expr: { $eq: ["$mode", "$m.mode"] } } },
+        {
+            $group: {
+                _id: null,
+                count: { $sum: 1 },
+                amountPaise: { $sum: "$amountPaise" },
+                feePaise: { $sum: { $ifNull: ["$feePaise", 0] } },
+                payablePaise: { $sum: { $ifNull: ["$payablePaise", "$amountPaise"] } }
+            }
+        }
+    ]);
+    const t = row || { count: 0, amountPaise: 0, feePaise: 0, payablePaise: 0 };
+
+    return {
+        merchant: merchant && {
+            mid: merchant.mid, businessName: merchant.businessName, mode: merchant.mode,
+            payinBps: merchant.config?.payinBps ?? null, payoutBps: merchant.config?.payoutBps ?? null
+        },
+        successCount: t.count,
+        cards: {
+            totalPayinPaise: t.amountPaise,
+            payinChargesPaise: t.feePaise,
+            unsettledPaise: t.payablePaise,
+            toBeSettledPaise: 0,
+            settledPaise: 0,
+            loadBalancePaise: 0,
+            availablePaise: 0,
+            payoutPaise: 0,
+            payoutChargesPaise: 0
+        }
+    };
+};
+
 // The choices for the Merchant and Bank drop-downs. Agents cannot open the admin lists, so the tab
 // gets its own small read-only list (public fields only).
 const filterOptions = async () => {
@@ -187,4 +238,4 @@ const resendCallbackForOrder = async (orderId) => {
     return { order, delivery };
 };
 
-module.exports = { listOrders, filterOptions, updateAmount, updateUtr, failOrder, resendCallbackForOrder };
+module.exports = { listOrders, dashboardCards, filterOptions, updateAmount, updateUtr, failOrder, resendCallbackForOrder };
