@@ -8,3 +8,4 @@ resume
 .DS_Store
 .vscode
 webhook-logs-fix.patch
+/docs/

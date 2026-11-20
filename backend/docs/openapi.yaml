@@ -47,6 +47,7 @@ tags:
   - name: Merchant API
   - name: Customer Checkout
   - name: Callbacks
+  - name: Payin
   - name: Ops
 security:
   - bearerAuth: []
@@ -1224,6 +1225,174 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { description: The callback was cancelled and cannot be resent }
+  /api/payin/orders:
+    get:
+      tags: [Payin]
+      summary: Payin - every order with totals (admin and agent)
+      description: |
+        The orders table of the Payin tab, newest first, with totals over EVERY order that matches the filters (not just the page).
+        Fee and payable are summed over successful orders only. Open to admins and agents, not to merchants. Staff see the full bank account number.
+      parameters:
+        - { name: search, in: query, schema: { type: string }, description: "An exact order id, merchant order id or UTR" }
+        - { name: status, in: query, schema: { type: string, enum: [pending, success, failed] } }
+        - { name: mode, in: query, schema: { type: string, enum: [sandbox, production] } }
+        - { name: merchant, in: query, schema: { type: string }, description: Part of the merchant's MID or business name }
+        - { name: bank, in: query, schema: { type: string, example: bank_k3x9f2ab }, description: A bank's public id }
+        - { name: from, in: query, schema: { type: string, format: date-time }, description: Only orders created at or after this time }
+        - { name: to, in: query, schema: { type: string, format: date-time }, description: Only orders created at or before this time }
+        - { name: page, in: query, schema: { type: integer, default: 1 } }
+        - { name: limit, in: query, schema: { type: integer, default: 20, maximum: 100 } }
+      responses:
+        "200":
+          description: Paginated orders with totals
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  total: { type: integer }
+                  page: { type: integer }
+                  limit: { type: integer }
+                  totals:
+                    type: object
+                    properties:
+                      count: { type: integer }
+                      amountPaise: { type: integer }
+                      feePaise: { type: integer, description: Pay-in fees of successful orders }
+                      payablePaise: { type: integer, description: Amount minus fee, for successful orders }
+                      byStatus:
+                        type: object
+                        additionalProperties:
+                          type: object
+                          properties:
+                            count: { type: integer }
+                            amountPaise: { type: integer }
+                  data: { type: array, items: { $ref: "#/components/schemas/PayinOrder" } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /api/payin/orders/{orderId}/resend-callback:
+    post:
+      tags: [Payin]
+      summary: Resend the order's callback now (admin and agent)
+      description: |
+        Sends the order's CURRENT result to the merchant's current callback URL, even when auto-trigger is off. The callback is created if it does not exist,
+        and its body is rebuilt from the order as it is now. Starts a fresh retry cycle. Audited. Answers `ORDER_PENDING` for an order that is still pending,
+        `NO_CALLBACK_URL` when the merchant has none, and `ORDER_WRONG_MODE` for an order from the merchant's other mode.
+      parameters:
+        - $ref: "#/components/parameters/OrderId"
+      responses:
+        "200":
+          description: The delivery after the new attempt (the result to show in a toast)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  callback: { $ref: "#/components/schemas/PayinCallback" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: "The order is pending (`ORDER_PENDING`), from the other mode (`ORDER_WRONG_MODE`), or its callback was cancelled" }
+        "422": { description: "The merchant has no callback URL (`NO_CALLBACK_URL`)" }
+  /api/payin/orders/{orderId}/amount:
+    patch:
+      tags: [Payin]
+      summary: Correct the amount of an order (admin and agent)
+      description: |
+        Pending or successful orders only. The new amount stays inside the merchant's own minimum and maximum (`AMOUNT_OUT_OF_RANGE`).
+        A successful order has its fee and payable recomputed from the rate stored on it. A reason is required and is kept in the audit log with the old and new amount.
+      parameters:
+        - $ref: "#/components/parameters/OrderId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [amountPaise, reason]
+              properties:
+                amountPaise: { type: integer, minimum: 1 }
+                reason: { type: string, minLength: 3, maxLength: 500 }
+      responses:
+        "200":
+          description: The updated order
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  order: { $ref: "#/components/schemas/PayinOrder" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: "The order is failed, or changed meanwhile (`ORDER_STATE_CONFLICT`)" }
+        "422": { description: "Outside the merchant's minimum and maximum (`AMOUNT_OUT_OF_RANGE`)" }
+  /api/payin/orders/{orderId}/utr:
+    patch:
+      tags: [Payin]
+      summary: Correct the UTR of a successful order (admin and agent)
+      description: A UTR pays one order only (`UTR_IN_USE` otherwise). A reason is required and is kept in the audit log with the old and new UTR.
+      parameters:
+        - $ref: "#/components/parameters/OrderId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [utr, reason]
+              properties:
+                utr: { type: string, pattern: "^\\d{12}$" }
+                reason: { type: string, minLength: 3, maxLength: 500 }
+      responses:
+        "200":
+          description: The updated order
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  order: { $ref: "#/components/schemas/PayinOrder" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: "The UTR is used by another order (`UTR_IN_USE`), or the order is not successful (`ORDER_STATE_CONFLICT`)" }
+  /api/payin/orders/{orderId}/fail:
+    post:
+      tags: [Payin]
+      summary: Fail a pending or successful order (admin and agent)
+      description: |
+        Final: a failed order cannot be changed again. The merchant gets an `order.failed` callback with the reason `failed_by_staff` (the typed reason stays in the audit log only).
+        Money that arrived is not touched; refunds come later.
+      parameters:
+        - $ref: "#/components/parameters/OrderId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [reason]
+              properties:
+                reason: { type: string, minLength: 3, maxLength: 500 }
+      responses:
+        "200":
+          description: The failed order
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  order: { $ref: "#/components/schemas/PayinOrder" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: "The order is already failed, or changed meanwhile (`ORDER_STATE_CONFLICT`)" }
   /v1/whoami:
     get:
       tags: [Merchant API]
@@ -1424,7 +1593,54 @@ components:
       in: path
       required: true
       schema: { type: string }
+    OrderId:
+      name: orderId
+      in: path
+      required: true
+      schema: { type: string, example: ord_k3x9f2ab7mqp3x9f }
   schemas:
+    PayinCallback:
+      type: object
+      properties:
+        event: { type: string, enum: [order.success, order.failed] }
+        status: { type: string, enum: [pending, delivered, failed, cancelled] }
+        statusCode: { type: integer, nullable: true }
+        attempts: { type: integer }
+        maxAttempts: { type: integer }
+        lastAttemptAt: { type: string, format: date-time, nullable: true }
+        error: { type: string, nullable: true }
+    PayinOrder:
+      type: object
+      properties:
+        id: { type: string }
+        orderId: { type: string, example: ord_k3x9f2ab7mqp3x9f }
+        merchantOrderId: { type: string, nullable: true }
+        merchant:
+          type: object
+          properties:
+            id: { type: string }
+            mid: { type: string }
+            businessName: { type: string }
+        mode: { type: string, enum: [sandbox, production] }
+        status: { type: string, enum: [pending, success, failed] }
+        statusReason: { type: string, nullable: true }
+        amountPaise: { type: integer }
+        feePaise: { type: integer, nullable: true, description: Null until the order succeeds, and for orders without a stored rate }
+        payablePaise: { type: integer, nullable: true }
+        utr: { type: string, nullable: true }
+        bank:
+          type: object
+          properties:
+            bankId: { type: string }
+            bankName: { type: string }
+            holderName: { type: string }
+            accountNumber: { type: string }
+            ifsc: { type: string }
+            upiId: { type: string }
+        callback: { $ref: "#/components/schemas/PayinCallback" }
+        paidAt: { type: string, format: date-time, nullable: true }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
     WebhookEvent:
       type: string
       enum: [checkout.created, payment.success]

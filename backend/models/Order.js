@@ -17,6 +17,9 @@ const orderSchema = new mongoose.Schema({
     merchantOrderId: { type: String, default: undefined },
 
     amountPaise: { type: Number, required: true, min: 1, validate: Number.isInteger },
+    // The merchant's pay-in rate (basis points) when the order was created. The fee is worked out
+    // from it, so later rate edits never change this order. Null on orders from before this field.
+    payinBps: { type: Number, default: null, min: 0, max: 10000, immutable: true },
     currency: { type: String, default: "INR", immutable: true },
     description: { type: String, trim: true, maxlength: 200, default: "" },
     customerName: { type: String, trim: true, maxlength: 120, default: "" },
@@ -32,13 +35,19 @@ const orderSchema = new mongoose.Schema({
     // Set when a payment is claimed.
     utr: { type: String, default: null },
     claimedCreditId: { type: mongoose.Schema.Types.ObjectId, ref: "BankCredit", default: null },
-    paidAt: { type: Date, default: null }
+    paidAt: { type: Date, default: null },
+    // Set when the order succeeds (and again if its amount is corrected): the pay-in fee and what
+    // is left for the merchant. Null until then, and null when there is no stored rate.
+    feePaise: { type: Number, default: null, min: 0 },
+    payablePaise: { type: Number, default: null }
 }, { timestamps: true });
 
 orderSchema.index({ merchantId: 1, mode: 1, createdAt: -1 });
 orderSchema.index({ bankId: 1, createdAt: -1 });
 // The expiry sweep looks for pending orders that are past their time.
 orderSchema.index({ status: 1, expiresAt: 1 });
+// A UTR pays one order only. Partial, so pending and failed orders (no UTR) are not affected.
+orderSchema.index({ utr: 1 }, { unique: true, partialFilterExpression: { utr: { $type: "string" } } });
 // One merchant order id per merchant and mode; partial so orders without one are not affected.
 orderSchema.index(
     { merchantId: 1, mode: 1, merchantOrderId: 1 },

@@ -6,7 +6,7 @@ const mongoose = require("mongoose");
 const auditLogSchema = new mongoose.Schema({
     actorType: {
         type: String,
-        enum: ["admin", "merchant_user", "merchant_api", "anonymous", "system"],
+        enum: ["admin", "agent", "merchant_user", "merchant_api", "anonymous", "system"],
         required: true
     },
     actorId: { type: String, default: null },

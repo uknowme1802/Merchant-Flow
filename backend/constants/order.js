@@ -16,4 +16,8 @@ const MERCHANT_ORDER_ID_REGEX = /^[A-Za-z0-9_\-.:]{1,64}$/;
 // Largest order we accept, in paise (Rs 10,00,000).
 const MAX_ORDER_PAISE = 100000000;
 
-module.exports = { ORDER_STATUS, ORDER_EXPIRY_MINUTES, UTR_REGEX, MERCHANT_ORDER_ID_REGEX, MAX_ORDER_PAISE };
+// What a correction made by staff stores as the reason, so the merchant's callback never carries
+// internal notes. The real reason goes to the audit log.
+const STAFF_FAIL_REASON = "failed_by_staff";
+
+module.exports = { STAFF_FAIL_REASON, ORDER_STATUS, ORDER_EXPIRY_MINUTES, UTR_REGEX, MERCHANT_ORDER_ID_REGEX, MAX_ORDER_PAISE };

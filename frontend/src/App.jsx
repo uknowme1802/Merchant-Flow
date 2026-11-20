@@ -10,6 +10,7 @@ import Checkout from "./pages/Checkout";
 import AdminPaymentCode from "./pages/AdminPaymentCode";
 import Webhooks from "./pages/Webhooks";
 import AdminWebhookEvents from "./pages/AdminWebhookEvents";
+import Payin from "./pages/Payin";
 import MerchantSignup from "./pages/MerchantSignup";
 import MerchantAccount from "./pages/MerchantAccount";
 import MerchantCredentials from "./pages/MerchantCredentials";
@@ -73,7 +74,8 @@ function App(){
           <Route path="/checkout" element={<Checkout />} />
           <Route path="/payment-code" element={<RoleRoute roles={["admin"]}><AdminPaymentCode /></RoleRoute>} />
           <Route path="/webhooks" element={<RoleRoute roles={["admin"]}><Webhooks /></RoleRoute>} />
-          <Route path="/webhook-events" element={<RoleRoute roles={["admin", "agent"]}><AdminWebhookEvents /></RoleRoute>} />
+          <Route path="/payin" element={<RoleRoute roles={["admin", "agent"]}><Payin /></RoleRoute>} />
+          <Route path="/webhook-events"element={<RoleRoute roles={["admin", "agent"]}><AdminWebhookEvents /></RoleRoute>} />
           <Route path="/admin/merchants"element={<RoleRoute roles={["admin"]}><AdminMerchants /></RoleRoute>} />
           <Route path="/admin/merchants/:id/payin" element={<RoleRoute roles={["admin"]}><AdminMerchantPayin /></RoleRoute>} />
           <Route path="/admin/banks" element={<RoleRoute roles={["admin"]}><AdminBanks /></RoleRoute>} />

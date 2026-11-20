@@ -4,7 +4,7 @@ const { hasAtMostTwoDecimals } = require("../utils/money");
 const { BUSINESS_TYPES, ENVIRONMENTS, MERCHANT_STATUS, MERCHANT_MODES } = require("../constants/merchant");
 const { IFSC_REGEX, ACCOUNT_NUMBER_REGEX, UPI_ID_REGEX, BANK_STATUS, BANK_METHODS } = require("../constants/bank");
 const { STAFF_ROLES } = require("../constants/roles");
-const { UTR_REGEX, MERCHANT_ORDER_ID_REGEX, MAX_ORDER_PAISE } = require("../constants/order");
+const { UTR_REGEX, MERCHANT_ORDER_ID_REGEX, MAX_ORDER_PAISE, ORDER_STATUS } = require("../constants/order");
 const { CALLBACK_STATUS } = require("../constants/callback");
 
 const paise = Joi.number().integer().min(0).max(100000000000);
@@ -268,6 +268,33 @@ module.exports = {
         claimed: Joi.boolean().optional(),
         page: Joi.number().integer().min(1).default(1),
         limit: Joi.number().integer().min(1).max(100).default(20)
+    }),
+
+    // Payin tab: the orders table. Dates are ISO times; text filters are matched on the server.
+    payinOrderListQuery: Joi.object({
+        search: Joi.string().trim().max(100).allow("").optional(),
+        status: Joi.string().valid(...ORDER_STATUS).optional(),
+        mode: Joi.string().valid(...MERCHANT_MODES).optional(),
+        merchant: Joi.string().trim().max(100).allow("").optional(),
+        bank: Joi.string().trim().max(60).allow("").optional(),
+        from: Joi.date().iso().optional(),
+        to: Joi.date().iso().when("from", { is: Joi.exist(), then: Joi.date().min(Joi.ref("from")) }).optional(),
+        page: Joi.number().integer().min(1).default(1),
+        limit: Joi.number().integer().min(1).max(100).default(20)
+    }),
+
+    payinUpdateAmount: Joi.object({
+        amountPaise: Joi.number().integer().strict().min(1).max(MAX_ORDER_PAISE).required(),
+        reason: Joi.string().trim().min(3).max(500).required()
+    }),
+
+    payinUpdateUtr: Joi.object({
+        utr: Joi.string().trim().pattern(UTR_REGEX).required(),
+        reason: Joi.string().trim().min(3).max(500).required()
+    }),
+
+    payinFailOrder: Joi.object({
+        reason: Joi.string().trim().min(3).max(500).required()
     }),
 
     callbackListQuery: Joi.object({
