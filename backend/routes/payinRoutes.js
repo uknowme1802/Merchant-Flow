@@ -19,6 +19,7 @@ router.param("orderId", (req, res, next, value) => {
     next();
 });
 
+router.get("/filter-options", payin.filterOptions);
 router.get("/orders", validateQuery(schemas.payinOrderListQuery), payin.list);
 router.post("/orders/:orderId/resend-callback", payin.resendCallback);
 router.patch("/orders/:orderId/amount", validate(schemas.payinUpdateAmount), payin.updateAmount);

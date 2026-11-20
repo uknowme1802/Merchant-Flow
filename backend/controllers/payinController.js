@@ -49,6 +49,11 @@ exports.list = wrap(async (req, res) => {
     res.json({ success: true, total, page, limit, totals, data: data.map(toRow) });
 });
 
+// GET /api/payin/filter-options
+exports.filterOptions = wrap(async (req, res) => {
+    res.json({ success: true, ...(await payinService.filterOptions()) });
+});
+
 // POST /api/payin/orders/:orderId/resend-callback
 exports.resendCallback = wrap(async (req, res) => {
     const { order, delivery } = await payinService.resendCallbackForOrder(req.params.orderId);
