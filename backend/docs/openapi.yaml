@@ -1182,6 +1182,49 @@ paths:
                   callback: { $ref: "#/components/schemas/CallbackDelivery" }
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { description: The callback was cancelled (the merchant changed mode) and cannot be resent }
+  /api/merchant/dashboard:
+    get:
+      tags: [Merchant]
+      summary: Your nine dashboard cards (merchant)
+      description: |
+        The same cards as the staff dashboard, for your own MID only and in your current mode. The merchant is taken from
+        the login; nothing the browser sends can point it at another merchant. Any team role can read it.
+      responses:
+        "200": { description: "The cards in paise: totalPayinPaise, payinChargesPaise, unsettledPaise, toBeSettledPaise, settledPaise, loadBalancePaise, availablePaise, payoutPaise, payoutChargesPaise" }
+        "401": { description: Not logged in }
+        "403": { description: Not a merchant login }
+  /api/merchant/orders:
+    get:
+      tags: [Merchant]
+      summary: Your orders with totals (merchant)
+      description: |
+        Your own orders in your current mode, newest first, with totals over every order that matches the filters.
+        The bank account number is shown as its last four digits only. Any team role can read it.
+      parameters:
+        - { name: search, in: query, schema: { type: string }, description: "An exact order id, your own order id or UTR" }
+        - { name: status, in: query, schema: { type: string, enum: [pending, success, failed] } }
+        - { name: from, in: query, schema: { type: string, format: date-time } }
+        - { name: to, in: query, schema: { type: string, format: date-time } }
+        - { name: page, in: query, schema: { type: integer, default: 1 } }
+        - { name: limit, in: query, schema: { type: integer, default: 20, maximum: 100 } }
+      responses:
+        "200": { description: "Paginated orders with `totals` (count, amountPaise, feePaise, payablePaise, byStatus)" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { description: Not logged in }
+        "403": { description: Not a merchant login }
+  /api/merchant/orders/{orderId}/resend-callback:
+    post:
+      tags: [Merchant]
+      summary: Resend an order's callback (owner or developer)
+      description: Sends the order's current result to your callback URL now, even with auto-trigger off. Only your own orders in your current mode.
+      parameters:
+        - { name: orderId, in: path, required: true, schema: { type: string, example: ord_k3x9f2ab7mqp3x9f } }
+      responses:
+        "200": { description: The result of the delivery attempt }
+        "403": { description: "Your team role cannot do this (finance)" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { description: The order is still pending, or belongs to your other mode }
+        "422": { description: No callback URL is set }
   /api/merchant/callbacks:
     get:
       tags: [Callbacks]

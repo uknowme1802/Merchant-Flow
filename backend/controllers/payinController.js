@@ -1,41 +1,10 @@
 const payinService = require("../services/payinService");
 const { recordAudit } = require("../utils/audit");
+const { callbackView, toRow } = require("../utils/orderView");
 
 const wrap = (fn) => async (req, res, next) => {
     try { await fn(req, res); } catch (err) { next(err); }
 };
-
-const callbackView = (d) => d && ({
-    event: d.event, status: d.status, statusCode: d.statusCode, attempts: d.attempts,
-    maxAttempts: d.maxAttempts, lastAttemptAt: d.lastAttemptAt, error: d.error
-});
-
-// One row of the Payin table. Staff see the full account number.
-const toRow = ({ order: o, callback }) => ({
-    id: o._id,
-    orderId: o.orderId,
-    merchantOrderId: o.merchantOrderId ?? null,
-    merchant: o.merchantId && o.merchantId.mid
-        ? { id: o.merchantId._id, mid: o.merchantId.mid, businessName: o.merchantId.businessName }
-        : undefined,
-    mode: o.mode,
-    status: o.status,
-    statusReason: o.statusReason,
-    amountPaise: o.amountPaise,
-    feePaise: o.feePaise,
-    payablePaise: o.payablePaise,
-    utr: o.utr,
-    bank: o.bankId && o.bankId.bankId
-        ? {
-            bankId: o.bankId.bankId, bankName: o.bankId.bankName, holderName: o.bankId.holderName,
-            accountNumber: o.bankId.accountNumber, ifsc: o.bankId.ifsc, upiId: o.bankId.upiId
-        }
-        : undefined,
-    callback: callbackView(callback),
-    paidAt: o.paidAt,
-    createdAt: o.createdAt,
-    updatedAt: o.updatedAt
-});
 
 // The audit entry for an action: who, which order, what changed and why.
 const audit = (req, action, order, metadata) => recordAudit(req, {

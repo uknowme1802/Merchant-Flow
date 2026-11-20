@@ -13,6 +13,8 @@ import AdminWebhookEvents from "./pages/AdminWebhookEvents";
 import Payin from "./pages/Payin";
 import MerchantSignup from "./pages/MerchantSignup";
 import MerchantAccount from "./pages/MerchantAccount";
+import MerchantDashboard from "./pages/MerchantDashboard";
+import MerchantTransactions from "./pages/MerchantTransactions";
 import MerchantCredentials from "./pages/MerchantCredentials";
 import MerchantTeam from "./pages/MerchantTeam";
 import AdminMerchants from "./pages/AdminMerchants";
@@ -81,6 +83,8 @@ function App(){
           <Route path="/admin/banks" element={<RoleRoute roles={["admin"]}><AdminBanks /></RoleRoute>} />
           <Route path="/admin/bank-credits" element={<RoleRoute roles={["admin"]}><AdminBankCredits /></RoleRoute>} />
           <Route path="/merchant" element={<RoleRoute roles={["merchant"]}><MerchantAccount /></RoleRoute>} />
+          <Route path="/merchant/dashboard" element={<RoleRoute roles={["merchant"]}><MerchantDashboard /></RoleRoute>} />
+          <Route path="/merchant/transactions" element={<RoleRoute roles={["merchant"]}><MerchantTransactions /></RoleRoute>} />
           <Route path="/merchant/credentials" element={<RoleRoute roles={["merchant"]}><MerchantCredentials /></RoleRoute>} />
           <Route path="/merchant/team" element={<RoleRoute roles={["merchant"]}><MerchantTeam /></RoleRoute>} />
         </Route>

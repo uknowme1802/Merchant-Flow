@@ -26,6 +26,40 @@ function Card({ title, value, note, icon, muted }) {
   )
 }
 
+// The Pay-in and Payout card sections. Shared by the staff dashboard and the merchant's own.
+export function OverviewCards({ data }) {
+  if (!data) return null
+  const c = data.cards
+  const m = data.merchant
+  const later = "Starts with settlements"
+  const laterPayout = "Starts with payouts"
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-500">Pay-in</h3>
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+          <Card title="Total pay-in" value={rupees(c.totalPayinPaise)} note={`${data.successCount} successful orders`} icon={<ArrowDownToLine size={20} />} />
+          <Card title="Pay-in charges" value={rupees(c.payinChargesPaise)} note={m ? `Rate ${percent(m.payinBps)}` : undefined} icon={<Percent size={20} />} />
+          <Card title="Unsettled balance" value={rupees(c.unsettledPaise)} note="What the merchants are owed" icon={<Hourglass size={20} />} />
+          <Card title="To be settled" value={rupees(c.toBeSettledPaise)} note={later} icon={<Clock size={20} />} muted />
+          <Card title="Settled balance" value={rupees(c.settledPaise)} note={later} icon={<Banknote size={20} />} muted />
+        </div>
+      </div>
+
+      <div>
+        <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-500">Payout</h3>
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <Card title="Total load balance" value={rupees(c.loadBalancePaise)} note={laterPayout} icon={<WalletCards size={20} />} muted />
+          <Card title="Available balance" value={rupees(c.availablePaise)} note={laterPayout} icon={<Wallet size={20} />} muted />
+          <Card title="Total payout" value={rupees(c.payoutPaise)} note={laterPayout} icon={<Send size={20} />} muted />
+          <Card title="Payout charges" value={rupees(c.payoutChargesPaise)} note={m ? `Rate ${percent(m.payoutBps)}` : laterPayout} icon={<HandCoins size={20} />} muted />
+        </div>
+      </div>
+      </div>
+  )
+}
+
 export default function PayinOverview() {
   const [merchants, setMerchants] = useState([])
   const [mid, setMid] = useState("")
@@ -44,11 +78,6 @@ export default function PayinOverview() {
     return () => { ignore = true }
   }, [mid])
 
-  const c = data?.cards
-  const m = data?.merchant
-  const later = "Starts with settlements"
-  const laterPayout = "Starts with payouts"
-
   return (
     <section className="mb-8">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
@@ -64,30 +93,7 @@ export default function PayinOverview() {
 
       {error && <p role="alert" className="mb-4 rounded-xl bg-red-50 px-4 py-3 text-sm text-red-700 ring-1 ring-red-600/10">{error}</p>}
 
-      {c && (
-        <div className="space-y-6">
-          <div>
-            <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-500">Pay-in</h3>
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-              <Card title="Total pay-in" value={rupees(c.totalPayinPaise)} note={`${data.successCount} successful orders`} icon={<ArrowDownToLine size={20} />} />
-              <Card title="Pay-in charges" value={rupees(c.payinChargesPaise)} note={m ? `Rate ${percent(m.payinBps)}` : undefined} icon={<Percent size={20} />} />
-              <Card title="Unsettled balance" value={rupees(c.unsettledPaise)} note="What the merchants are owed" icon={<Hourglass size={20} />} />
-              <Card title="To be settled" value={rupees(c.toBeSettledPaise)} note={later} icon={<Clock size={20} />} muted />
-              <Card title="Settled balance" value={rupees(c.settledPaise)} note={later} icon={<Banknote size={20} />} muted />
-            </div>
-          </div>
-
-          <div>
-            <h3 className="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-500">Payout</h3>
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-              <Card title="Total load balance" value={rupees(c.loadBalancePaise)} note={laterPayout} icon={<WalletCards size={20} />} muted />
-              <Card title="Available balance" value={rupees(c.availablePaise)} note={laterPayout} icon={<Wallet size={20} />} muted />
-              <Card title="Total payout" value={rupees(c.payoutPaise)} note={laterPayout} icon={<Send size={20} />} muted />
-              <Card title="Payout charges" value={rupees(c.payoutChargesPaise)} note={m ? `Rate ${percent(m.payoutBps)}` : laterPayout} icon={<HandCoins size={20} />} muted />
-            </div>
-          </div>
-        </div>
-      )}
+      <OverviewCards data={data} />
     </section>
   )
 }

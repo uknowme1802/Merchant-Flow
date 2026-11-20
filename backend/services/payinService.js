@@ -69,9 +69,12 @@ const computeTotals = async (filter) => {
     return totals;
 };
 
-const listOrders = async (query) => {
+// `scope` ({ merchantId, mode }) is for a merchant's own view: it replaces the merchant, bank and mode
+// filters, which a merchant cannot choose.
+const listOrders = async (query, scope = null) => {
     const { page = 1, limit = 20 } = query;
-    const filter = await buildFilter(query);
+    const filter = await buildFilter(scope ? { ...query, merchant: undefined, bank: undefined, mode: undefined } : query);
+    if (scope) Object.assign(filter, { merchantId: scope.merchantId, mode: scope.mode });
 
     const [orders, total, totals] = await Promise.all([
         Order.find(filter).sort({ createdAt: -1, _id: -1 }).skip((page - 1) * limit).limit(limit)
@@ -156,8 +159,8 @@ const filterOptions = async () => {
 
 // Loads one order by its public id. A pending order past its time fails first, so an action never
 // works on an order that is really over.
-const loadOrder = async (orderId) => {
-    const order = await Order.findOne({ orderId });
+const loadOrder = async (orderId, scope = null) => {
+    const order = await Order.findOne({ orderId, ...(scope && { merchantId: scope.merchantId, mode: scope.mode }) });
     if (!order) throw new ApiError(404, "Order not found");
     return expireIfDue(order);
 };
@@ -232,8 +235,8 @@ const failOrder = async (orderId) => {
 };
 
 // Send the order's current result to the merchant now. Returns the order and the delivery.
-const resendCallbackForOrder = async (orderId) => {
-    const order = await loadOrder(orderId);
+const resendCallbackForOrder = async (orderId, scope = null) => {
+    const order = await loadOrder(orderId, scope);
     const delivery = await resendOrderCallback(order);
     return { order, delivery };
 };
