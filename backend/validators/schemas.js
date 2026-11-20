@@ -310,6 +310,11 @@ module.exports = {
         reason: Joi.string().trim().min(3).max(500).required()
     }),
 
+    payinRefundOrder: Joi.object({
+        amountPaise: Joi.number().integer().strict().min(1).max(MAX_ORDER_PAISE).required(),
+        reason: Joi.string().trim().min(3).max(500).required()
+    }),
+
     callbackListQuery: Joi.object({
         merchantId: objectId.optional(),
         mode: Joi.string().valid(...MERCHANT_MODES).optional(),

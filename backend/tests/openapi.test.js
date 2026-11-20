@@ -56,7 +56,7 @@ describe("openapi.yaml", () => {
         expect(Object.keys(spec.paths["/api/webhook-events/{id}/body"])).toEqual(["get"]);
         expect(Object.keys(spec.paths["/api/merchant/callbacks"])).toEqual(["get"]);
         expect(Object.keys(spec.paths["/api/merchant/callbacks/{id}/resend"])).toEqual(["post"]);
-        expect(spec.components.schemas.CallbackPayload.properties.event.enum).toEqual(["order.success", "order.failed"]);
+        expect(spec.components.schemas.CallbackPayload.properties.event.enum).toEqual(["order.success", "order.failed", "order.refunded"]);
     });
 
     test("documents the Phase 2c Payin endpoints", () => {
@@ -65,6 +65,7 @@ describe("openapi.yaml", () => {
         expect(Object.keys(spec.paths["/api/payin/orders/{orderId}/amount"])).toEqual(["patch"]);
         expect(Object.keys(spec.paths["/api/payin/orders/{orderId}/utr"])).toEqual(["patch"]);
         expect(Object.keys(spec.paths["/api/payin/orders/{orderId}/fail"])).toEqual(["post"]);
+        expect(Object.keys(spec.paths["/api/payin/orders/{orderId}/refund"])).toEqual(["post"]);
         const { ORDER_STATUS } = require("../constants/order");
         expect(spec.components.schemas.PayinOrder.properties.status.enum).toEqual(ORDER_STATUS);
     });

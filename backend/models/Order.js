@@ -36,6 +36,10 @@ const orderSchema = new mongoose.Schema({
     utr: { type: String, default: null },
     claimedCreditId: { type: mongoose.Schema.Types.ObjectId, ref: "BankCredit", default: null },
     paidAt: { type: Date, default: null },
+    // Staff refunds (a simulation: no money moves). The total returned so far, never above the amount,
+    // and when the last refund was made. The order becomes "refunded" when the total reaches the amount.
+    refundedPaise: { type: Number, default: 0, min: 0, validate: Number.isInteger },
+    refundedAt: { type: Date, default: null },
     // Set when the order succeeds (and again if its amount is corrected): the pay-in fee and what
     // is left for the merchant. Null until then, and null when there is no stored rate.
     feePaise: { type: Number, default: null, min: 0 },

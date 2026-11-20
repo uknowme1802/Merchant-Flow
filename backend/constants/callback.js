@@ -1,5 +1,5 @@
 // Callbacks: the signed message we POST to a merchant's callbackUrl when an order is paid or fails.
-const CALLBACK_EVENTS = ["order.success", "order.failed"];
+const CALLBACK_EVENTS = ["order.success", "order.failed", "order.refunded"];
 const CALLBACK_STATUS = ["pending", "delivered", "failed", "cancelled"];
 
 // After a failed attempt, try again after this long, until the receiver answers HTTP 200 or the

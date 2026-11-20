@@ -3,6 +3,7 @@ import toast from "react-hot-toast"
 import API from "../services/api"
 import Card from "../components/ui/Card"
 import Button from "../components/ui/Button"
+import { submitOnEnter } from "../utils/keys"
 
 export default function MerchantTeam() {
   const [members, setMembers] = useState([])
@@ -58,7 +59,7 @@ export default function MerchantTeam() {
 
       <Card>
         <h3 className="font-semibold mb-3">Add a member</h3>
-        <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-4 gap-3" onKeyDown={submitOnEnter(add)}>
           <input className="p-2 border rounded" placeholder="Email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
           <input className="p-2 border rounded" type="password" placeholder="Temporary password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} />
           <select className="p-2 border rounded" value={form.merchantRole} onChange={(e) => setForm({ ...form, merchantRole: e.target.value })}>

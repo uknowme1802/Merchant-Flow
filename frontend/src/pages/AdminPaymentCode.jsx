@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import API from "../services/api";
 import Button from "../components/ui/Button";
 import toast from "react-hot-toast";
+import { submitOnEnter } from "../utils/keys"
 
 export default function AdminPaymentCode(){
     const [amount, setAmount] = useState("");
@@ -75,7 +76,7 @@ export default function AdminPaymentCode(){
             <h1 className="text-xl font-bold mb-4">Payment codes</h1>
 
             <div className="bg-white border rounded-lg p-6 mb-6">
-                <div className="space-y-3">
+                <div className="space-y-3" onKeyDown={submitOnEnter(saveUtr)}>
                     <input type="number" className="w-full p-2 border rounded" placeholder="Amount" value={amount} onChange={(e)=>setAmount(e.target.value)} />
 
                     <input className="w-full p-2 border rounded tracking-widest" placeholder="12-digit UTR" inputMode="numeric" value={utr} onChange={handleUtrChange} />

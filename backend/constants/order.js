@@ -1,8 +1,11 @@
 // Shared constants for orders and bank credits (Phase 2a). Money is always whole paise.
 
 // An order only moves forward: pending -> success (a payment was claimed) or pending -> failed
-// (it expired or an admin failed it). Refunds come in a later phase.
-const ORDER_STATUS = ["pending", "success", "failed"];
+// (it expired or an admin failed it), and success -> failed (staff fail it). Staff can refund a
+// successful order in part, as often as they like until nothing is left; the order stays success
+// while some of it is left and becomes refunded once all of it is returned (a simulation, no money
+// moves). Failed and refunded are final.
+const ORDER_STATUS = ["pending", "success", "failed", "refunded"];
 
 // A pending order stops accepting a UTR after this long and becomes failed.
 const ORDER_EXPIRY_MINUTES = 15;
@@ -19,5 +22,6 @@ const MAX_ORDER_PAISE = 100000000;
 // What a correction made by staff stores as the reason, so the merchant's callback never carries
 // internal notes. The real reason goes to the audit log.
 const STAFF_FAIL_REASON = "failed_by_staff";
+const STAFF_REFUND_REASON = "refunded_by_staff";
 
-module.exports = { STAFF_FAIL_REASON, ORDER_STATUS, ORDER_EXPIRY_MINUTES, UTR_REGEX, MERCHANT_ORDER_ID_REGEX, MAX_ORDER_PAISE };
+module.exports = { STAFF_FAIL_REASON, STAFF_REFUND_REASON, ORDER_STATUS, ORDER_EXPIRY_MINUTES, UTR_REGEX, MERCHANT_ORDER_ID_REGEX, MAX_ORDER_PAISE };

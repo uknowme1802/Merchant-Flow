@@ -5,6 +5,7 @@ import API from "../services/api"
 import Button from "../components/ui/Button"
 import toast from "react-hot-toast"
 import { Eye, EyeClosed } from "lucide-react"
+import { submitOnEnter } from "../utils/keys"
 
 export default function Login(){
 
@@ -92,7 +93,7 @@ export default function Login(){
   return (
     <div className="flex items-center justify-center h-screen bg-gradient-to-r from-indigo-500
     to-purple-600">
-      <div className="bg-white p-10 rounded-x1 shadow-xl w-96">
+      <div className="bg-white p-10 rounded-x1 shadow-xl w-96" onKeyDown={submitOnEnter(handleVerifyCode)}>
         <h2 className="text-2xl font-bold mb-2 text-corner">
           Two-Factor Authentication
         </h2>
@@ -124,7 +125,7 @@ export default function Login(){
 
   <div className="flex items-center justify-center h-screen bg-gradient-to-r from-indigo-500 to-purple-600">
 
-   <div className="bg-white p-10 rounded-xl shadow-xl w-96">
+   <div className="bg-white p-10 rounded-xl shadow-xl w-96" onKeyDown={submitOnEnter(handleLogin)}>
 
     <h2 className="text-2xl font-bold mb-6 text-center">
      MerchantFlow Login
