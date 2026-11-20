@@ -49,6 +49,11 @@ exports.list = wrap(async (req, res) => {
     res.json({ success: true, total, page, limit, totals, data: data.map(toRow) });
 });
 
+// GET /api/payin/dashboard?merchant=<mid>
+exports.dashboard = wrap(async (req, res) => {
+    res.json({ success: true, ...(await payinService.dashboardCards(req.validatedQuery)) });
+});
+
 // GET /api/payin/filter-options
 exports.filterOptions = wrap(async (req, res) => {
     res.json({ success: true, ...(await payinService.filterOptions()) });

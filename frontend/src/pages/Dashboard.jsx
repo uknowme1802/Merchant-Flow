@@ -7,6 +7,7 @@ import { useNavigate } from "react-router-dom"
 import RevenueChart from "../components/charts/RevenueChart"
 import TransactionChart from "../components/charts/TransactionChart"
 import PaymentPieChart from "../components/charts/PaymentPieChart"
+import PayinOverview from "../components/dashboard/PayinOverview"
 
 
 export default function Dashboard() {
@@ -37,6 +38,8 @@ export default function Dashboard() {
       <h1 className="text-2xl font-bold mb-6">
         Dashboard Overview
       </h1>
+
+      <PayinOverview />
 
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">

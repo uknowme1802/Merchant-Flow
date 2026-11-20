@@ -1225,6 +1225,41 @@ paths:
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
         "409": { description: The callback was cancelled and cannot be resent }
+  /api/payin/dashboard:
+    get:
+      tags: [Payin]
+      summary: Payin - the nine dashboard cards (admin and agent)
+      description: |
+        Sums over successful orders in each merchant's current mode. Settlement and payouts are not built yet, so
+        every successful order counts as unsettled and the settled, load, payout cards are 0. Orders from before rates
+        were stored count as fee 0. Check: totalPayinPaise = payinChargesPaise + unsettledPaise + toBeSettledPaise + settledPaise.
+      parameters:
+        - { name: merchant, in: query, schema: { type: string, example: mid_k3x9f2ab7mqp }, description: "One merchant's MID. Leave out for all merchants" }
+      responses:
+        "200":
+          description: The cards, all in paise
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success: { type: boolean }
+                  successCount: { type: integer }
+                  merchant: { type: object, nullable: true, description: "Present when a merchant was chosen; includes the rates in basis points" }
+                  cards:
+                    type: object
+                    properties:
+                      totalPayinPaise: { type: integer }
+                      payinChargesPaise: { type: integer }
+                      unsettledPaise: { type: integer }
+                      toBeSettledPaise: { type: integer }
+                      settledPaise: { type: integer }
+                      loadBalancePaise: { type: integer }
+                      availablePaise: { type: integer }
+                      payoutPaise: { type: integer }
+                      payoutChargesPaise: { type: integer }
+        "404": { description: Unknown merchant }
+        "403": { description: Merchants cannot use this }
   /api/payin/filter-options:
     get:
       tags: [Payin]

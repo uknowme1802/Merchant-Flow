@@ -105,6 +105,60 @@ describe("the fee on an order", () => {
     });
 });
 
+describe("GET /api/payin/dashboard", () => {
+    const Merchant = require("../models/Merchant");
+    const cardsOf = async (query = "") => (await asAdmin("get", `/api/payin/dashboard${query}`)).body;
+
+    it("adds up successful orders and keeps total = charges + unsettled + to be settled + settled", async () => {
+        const { merchant, bank } = await setup();
+        await makeOrder(merchant, bank, { status: "success", amountPaise: 50000 });
+        await makeOrder(merchant, bank, { status: "success", amountPaise: 99999 });
+        await makeOrder(merchant, bank, { status: "pending", amountPaise: 70000 });
+        await makeOrder(merchant, bank, { status: "failed", amountPaise: 80000 });
+        // from before rates were stored: fee 0, payable = amount
+        await makeOrderOn(merchant, bank, { status: "success", utr: nextUtr(), paidAt: new Date(), amountPaise: 10000 });
+
+        const body = await cardsOf();
+        const c = body.cards;
+        expect(body.successCount).toBe(3);
+        expect(c.totalPayinPaise).toBe(50000 + 99999 + 10000);
+        expect(c.payinChargesPaise).toBe(1250 + 2500);
+        expect(c.unsettledPaise).toBe(48750 + 97499 + 10000);
+        expect(c.totalPayinPaise).toBe(c.payinChargesPaise + c.unsettledPaise + c.toBeSettledPaise + c.settledPaise);
+        expect([c.settledPaise, c.loadBalancePaise, c.availablePaise, c.payoutPaise, c.payoutChargesPaise]).toEqual([0, 0, 0, 0, 0]);
+        expect(body.merchant).toBeNull();
+    });
+
+    it("scopes to one merchant and returns its rates", async () => {
+        const one = await setup();
+        await makeOrder(one.merchant, one.bank, { status: "success", amountPaise: 50000 });
+        const other = await require("./helpers/realFixtures").makeMerchant({ mid: "mid_otherother01" });
+        await makeOrder(other, one.bank, { status: "success", amountPaise: 20000 });
+
+        expect((await cardsOf()).cards.totalPayinPaise).toBe(70000);
+        const body = await cardsOf(`?merchant=${one.merchant.mid}`);
+        expect(body.cards.totalPayinPaise).toBe(50000);
+        expect(body.merchant).toMatchObject({ mid: one.merchant.mid, mode: "sandbox", payinBps: 250 });
+    });
+
+    it("stops counting sandbox orders once the merchant is in production", async () => {
+        const { merchant, bank } = await setup();
+        await makeOrder(merchant, bank, { status: "success" });
+        await Merchant.updateOne({ _id: merchant._id }, { $set: { mode: "production" } });
+
+        expect((await cardsOf()).cards.totalPayinPaise).toBe(0);
+        expect((await cardsOf(`?merchant=${merchant.mid}`)).cards.totalPayinPaise).toBe(0);
+    });
+
+    it("is zero with no orders, 404 for an unknown or malformed merchant, open to agents, closed to merchants", async () => {
+        expect((await cardsOf()).cards.totalPayinPaise).toBe(0);
+        expect((await asAdmin("get", "/api/payin/dashboard?merchant=mid_doesnotexist")).statusCode).toBe(404);
+        expect((await asAdmin("get", "/api/payin/dashboard?merchant=nope")).statusCode).toBe(400);
+        expect((await asAgent("get", "/api/payin/dashboard")).statusCode).toBe(200);
+        expect((await request(app).get("/api/payin/dashboard")).statusCode).toBe(401);
+    });
+});
+
 describe("GET /api/payin/orders", () => {
     it("lists orders with the merchant, bank details and the latest callback", async () => {
         const { merchant, bank } = await setup();
