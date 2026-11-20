@@ -6,6 +6,8 @@ import { AuthContext } from "../context/AuthContext"
 const link = ({isActive}) => `flex items-center gap-3 px-3 py-2 rounded-xl text-sm transition ${isActive ? "bg-indigo-600 text-white font-semibold shadow-sm shadow-indigo-600/30 hover:text-white" : "text-gray-600 font-medium hover:bg-gray-100 hover:text-gray-900"}`;
 
 const MERCHANT_LINKS = [
+    { to: "/merchant/dashboard", label: "Dashboard", icon: LayoutDashboard },
+    { to: "/merchant/transactions", label: "Transactions", icon: CreditCard },
     { to: "/merchant", label: "Account", icon: Store, end: true },
     { to: "/merchant/credentials", label: "API credentials", icon: KeyRound },
     { to: "/merchant/team", label: "Team", icon: UsersIcon }
