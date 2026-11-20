@@ -21,6 +21,9 @@ const describeActor = (req) => {
     if (req.user?.role === "admin") {
         return { actorType: "admin", actorId: String(req.user.id), actorEmail: req.user.email || null };
     }
+    if (req.user?.role === "agent") {
+        return { actorType: "agent", actorId: String(req.user.id), actorEmail: req.user.email || null };
+    }
     if (req.user?.role === "merchant") {
         return { actorType: "merchant_user", actorId: String(req.user.id), actorEmail: req.user.email || null };
     }

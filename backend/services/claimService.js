@@ -1,5 +1,6 @@
 const BankCredit = require("../models/BankCredit");
 const Order = require("../models/Order");
+const { computeFee } = require("../utils/fees");
 
 // Outcomes of a claim. The checkout page shows the same "payment not found" message for
 // NOT_FOUND, so it never reveals whether a UTR exists but belongs to someone else.
@@ -31,7 +32,7 @@ const claimPayment = async (order, utr) => {
 
     const paid = await Order.findOneAndUpdate(
         { _id: order._id, status: "pending", expiresAt: { $gt: now } },
-        { $set: { status: "success", utr, claimedCreditId: credit._id, paidAt: now } },
+        { $set: { status: "success", utr, claimedCreditId: credit._id, paidAt: now, ...computeFee(order.amountPaise, order.payinBps) } },
         { returnDocument: "after" }
     );
     if (!paid) {

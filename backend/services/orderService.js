@@ -4,7 +4,7 @@ const { generateOrderId } = require("../utils/identifiers");
 const { selectBank } = require("./bankSelectionService");
 const { enqueueOrderCallback } = require("./callbackService");
 const { ORDER_EXPIRY_MINUTES } = require("../constants/order");
-const { MODE_ENVIRONMENT } = require("../constants/merchant");
+const { MODE_ENVIRONMENT, DEFAULT_MERCHANT_CONFIG } = require("../constants/merchant");
 
 const MAX_ID_ATTEMPTS = 5;
 
@@ -50,6 +50,8 @@ const createOrder = async (merchant, environment, input) => {
                 mode: merchant.mode,
                 merchantOrderId: merchantOrderId || undefined,
                 amountPaise,
+                // Fixed now, so the fee on this order never follows later rate edits.
+                payinBps: merchant.config?.payinBps ?? DEFAULT_MERCHANT_CONFIG.payinBps,
                 description,
                 customerName,
                 bankId: bank._id,

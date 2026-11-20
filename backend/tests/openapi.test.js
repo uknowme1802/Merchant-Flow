@@ -59,6 +59,16 @@ describe("openapi.yaml", () => {
         expect(spec.components.schemas.CallbackPayload.properties.event.enum).toEqual(["order.success", "order.failed"]);
     });
 
+    test("documents the Phase 2c Payin endpoints", () => {
+        expect(Object.keys(spec.paths["/api/payin/orders"])).toEqual(["get"]);
+        expect(Object.keys(spec.paths["/api/payin/orders/{orderId}/resend-callback"])).toEqual(["post"]);
+        expect(Object.keys(spec.paths["/api/payin/orders/{orderId}/amount"])).toEqual(["patch"]);
+        expect(Object.keys(spec.paths["/api/payin/orders/{orderId}/utr"])).toEqual(["patch"]);
+        expect(Object.keys(spec.paths["/api/payin/orders/{orderId}/fail"])).toEqual(["post"]);
+        const { ORDER_STATUS } = require("../constants/order");
+        expect(spec.components.schemas.PayinOrder.properties.status.enum).toEqual(ORDER_STATUS);
+    });
+
     test("the callback statuses and events in the docs match the code", () => {
         const { CALLBACK_STATUS, CALLBACK_EVENTS } = require("../constants/callback");
         expect(spec.components.schemas.CallbackDelivery.properties.status.enum).toEqual(CALLBACK_STATUS);

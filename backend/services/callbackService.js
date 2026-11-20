@@ -163,6 +163,52 @@ const resendCallback = async (deliveryId, scope = {}) => {
     return (await attempt(claimed)) || CallbackDelivery.findById(claimed._id);
 };
 
+// Resend from the Payin tab: sends the order's CURRENT state now, even when auto-trigger is off. The
+// callback for the order's present result (success or failed) is created if it does not exist yet,
+// its body is rebuilt from the order as it is now (an amount or UTR may have been corrected), and
+// it goes to the merchant's current callback URL. Starts a fresh retry cycle like any manual resend.
+const resendOrderCallback = async (order) => {
+    if (order.status === "pending") {
+        throw new ApiError(409, "This order is still pending, so there is nothing to send yet", "ORDER_PENDING");
+    }
+    const merchant = await Merchant.findById(order.merchantId);
+    if (!merchant || !merchant.config?.callbackUrl) {
+        throw new ApiError(422, "This merchant has no callback URL", "NO_CALLBACK_URL");
+    }
+    if (merchant.mode !== order.mode) {
+        throw new ApiError(409, "This order belongs to the merchant's other mode, so it cannot be sent", "ORDER_WRONG_MODE");
+    }
+
+    const event = order.status === "success" ? "order.success" : "order.failed";
+    let delivery = await CallbackDelivery.findOne({ orderId: order._id, event });
+    if (!delivery) {
+        try {
+            // No retry time, so the background worker leaves it alone until the claim below.
+            delivery = await CallbackDelivery.create({
+                merchantId: merchant._id, orderId: order._id, orderPublicId: order.orderId, mode: order.mode, event,
+                url: merchant.config.callbackUrl, body: buildBody(event, order),
+                maxAttempts: CALLBACK_MAX_ATTEMPTS, nextRetryAt: null
+            });
+        } catch (err) {
+            if (err.code !== 11000) throw err;
+            delivery = await CallbackDelivery.findOne({ orderId: order._id, event });
+        }
+    }
+
+    const claimed = await CallbackDelivery.findOneAndUpdate(
+        { _id: delivery._id, status: { $in: ["pending", "delivered", "failed"] } },
+        {
+            $set: {
+                body: buildBody(event, order), url: merchant.config.callbackUrl,
+                status: "pending", attempts: 0, nextRetryAt: new Date(Date.now() + CALLBACK_LEASE_MS)
+            }
+        },
+        { returnDocument: "after" }
+    );
+    if (!claimed) throw new ApiError(409, "This callback was cancelled and cannot be resent");
+    return (await attempt(claimed)) || CallbackDelivery.findById(claimed._id);
+};
+
 // At the switch between sandbox and production: stop what is still waiting in the mode being left.
 const cancelPendingCallbacks = async (merchantId, mode) => {
     const res = await CallbackDelivery.updateMany(
@@ -216,6 +262,6 @@ const startCallbackWorker = (beforeTick) => {
 };
 
 module.exports = {
-    enqueueOrderCallback, processDueCallbacks, resendCallback, cancelPendingCallbacks,
+    enqueueOrderCallback, processDueCallbacks, resendCallback, resendOrderCallback, cancelPendingCallbacks,
     listCallbacks, getCallback, startCallbackWorker, sign
 };
